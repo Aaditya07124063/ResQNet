@@ -1,6 +1,6 @@
 enum SosStatus { active, acknowledged, resolved }
 
-enum SosCategory { medical, fire, flood, earthquake, rescue, general }
+enum SosCategory { medical, fire, flood, earthquake, rescue, general, trapped }
 
 class SosAlert {
   final String id;

@@ -34,6 +34,9 @@ class LocationService extends ChangeNotifier {
     }
   }
 
+  // Alias used by home_screen
+  Future<Position?> getCurrentPosition() => getCurrentLocation();
+
   void startTracking() {
     _isTracking = true;
     Geolocator.getPositionStream(

@@ -23,7 +23,7 @@ class _SosScreenState extends State<SosScreen> {
     {'type': SosCategory.medical, 'icon': Icons.local_hospital, 'label': 'Medical', 'color': Color(0xFFD32F2F)},
     {'type': SosCategory.fire, 'icon': Icons.local_fire_department, 'label': 'Fire', 'color': Color(0xFFFF6F00)},
     {'type': SosCategory.flood, 'icon': Icons.water, 'label': 'Flood', 'color': Color(0xFF1565C0)},
-    {'type': SosCategory.earthquake, 'icon': Icons.terrain, 'label': 'Earthquake', 'color': Color(0xFF6D4C41)},
+    {'type': SosCategory.trapped, 'icon': Icons.terrain, 'label': 'Trapped', 'color': Color(0xFF6D4C41)},
     {'type': SosCategory.rescue, 'icon': Icons.emergency, 'label': 'Rescue', 'color': Color(0xFFF9A825)},
     {'type': SosCategory.general, 'icon': Icons.warning, 'label': 'General', 'color': Color(0xFF616161)},
   ];
@@ -60,7 +60,7 @@ class _SosScreenState extends State<SosScreen> {
             auth.currentUser?.phoneNumber ??
             'Unknown',
       );
-      await mesh.broadcastMessage(broadcastMsg);
+      await mesh.broadcast(broadcastMsg);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -69,7 +69,7 @@ class _SosScreenState extends State<SosScreen> {
               children: [
                 Icon(Icons.check_circle, color: Colors.white),
                 SizedBox(width: 8),
-                Text('SOS Broadcast Sent! Help is on the way.'),
+                Text('SOS Broadcast Sent!'),
               ],
             ),
             backgroundColor: AppColors.emergencyRed,
@@ -81,10 +81,8 @@ class _SosScreenState extends State<SosScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error sending SOS: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'),
+              backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -100,11 +98,10 @@ class _SosScreenState extends State<SosScreen> {
       backgroundColor: AppColors.backgroundDark,
       appBar: AppBar(
         backgroundColor: AppColors.surfaceDark,
-        title: const Text(
-          'Send SOS',
-          style: TextStyle(
-              color: AppColors.textPrimary, fontWeight: FontWeight.bold),
-        ),
+        title: const Text('Send SOS',
+            style: TextStyle(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.bold)),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => Navigator.pop(context),
@@ -115,7 +112,6 @@ class _SosScreenState extends State<SosScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Warning banner
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -129,7 +125,7 @@ class _SosScreenState extends State<SosScreen> {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'This will alert ALL nearby devices and send push notifications to all ResQNet users.',
+                      'This will alert ALL nearby devices and notify all ResQNet users.',
                       style: TextStyle(
                           color: AppColors.emergencyRed, fontSize: 12),
                     ),
@@ -138,20 +134,17 @@ class _SosScreenState extends State<SosScreen> {
               ),
             ),
             const SizedBox(height: 24),
-
-            const Text(
-              'Emergency Type',
-              style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold),
-            ),
+            const Text('Emergency Type',
+                style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
-
             GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              gridDelegate:
+                  const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 3,
                 crossAxisSpacing: 10,
                 mainAxisSpacing: 10,
@@ -185,14 +178,12 @@ class _SosScreenState extends State<SosScreen> {
                                 : AppColors.textSecondary,
                             size: 28),
                         const SizedBox(height: 6),
-                        Text(
-                          cat['label'] as String,
-                          style: TextStyle(
-                              color: isSelected
-                                  ? color
-                                  : AppColors.textSecondary,
-                              fontSize: 12),
-                        ),
+                        Text(cat['label'] as String,
+                            style: TextStyle(
+                                color: isSelected
+                                    ? color
+                                    : AppColors.textSecondary,
+                                fontSize: 12)),
                       ],
                     ),
                   ),
@@ -200,14 +191,11 @@ class _SosScreenState extends State<SosScreen> {
               },
             ),
             const SizedBox(height: 24),
-
-            const Text(
-              'Message (Optional)',
-              style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold),
-            ),
+            const Text('Message (Optional)',
+                style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             TextField(
               controller: _messageController,
@@ -225,7 +213,6 @@ class _SosScreenState extends State<SosScreen> {
               ),
             ),
             const SizedBox(height: 16),
-
             if (location.currentPosition != null)
               Container(
                 padding: const EdgeInsets.all(12),
@@ -258,16 +245,13 @@ class _SosScreenState extends State<SosScreen> {
                     Icon(Icons.location_off,
                         color: AppColors.textSecondary, size: 20),
                     SizedBox(width: 8),
-                    Text(
-                      'GPS not available',
-                      style: TextStyle(
-                          color: AppColors.textSecondary, fontSize: 13),
-                    ),
+                    Text('GPS not available',
+                        style: TextStyle(
+                            color: AppColors.textSecondary, fontSize: 13)),
                   ],
                 ),
               ),
             const SizedBox(height: 32),
-
             SizedBox(
               width: double.infinity,
               height: 56,

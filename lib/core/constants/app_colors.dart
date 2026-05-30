@@ -15,4 +15,12 @@ class AppColors {
   static const Color disconnectedGrey = Color(0xFF616161);
   static const Color primaryOrange = Color(0xFFE65100);
   static const Color warningAmber = Color(0xFFF9A825);
+
+  // Aliases used across the app
+  static const Color safeGreen = Color(0xFF4CAF50);
+  static const Color lowGrey = Color(0xFF616161);
+  static const Color infoBlue = Color(0xFF1565C0);
+  static const Color criticalRed = Color(0xFFD32F2F);
+  static const Color highOrange = Color(0xFFFF6F00);
+  static const Color mediumYellow = Color(0xFFF9A825);
 }

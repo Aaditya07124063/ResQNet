@@ -59,7 +59,7 @@ class SosService extends ChangeNotifier {
       id: alert.id,
       senderId: alert.userId,
       senderName: senderName,
-      message: alert.message,
+      content: alert.message,
       type: type,
       priority: priority,
       latitude: alert.latitude,

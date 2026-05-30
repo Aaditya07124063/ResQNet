@@ -13,11 +13,12 @@ class AiService extends ChangeNotifier {
     EmergencyType.flood: [
       'flood', 'water', 'drowning', 'submerged', 'rain', 'river', 'overflow',
     ],
-    EmergencyType.earthquake: [
-      'earthquake', 'tremor', 'quake', 'collapse', 'rubble', 'building fell',
+    EmergencyType.trapped: [
+      'earthquake', 'tremor', 'quake', 'collapse', 'rubble',
+      'trapped', 'stuck',
     ],
     EmergencyType.rescue: [
-      'trapped', 'stuck', 'rescue', 'help', 'missing', 'lost',
+      'rescue', 'help', 'missing', 'lost', 'emergency',
     ],
   };
 
@@ -57,6 +58,11 @@ class AiService extends ChangeNotifier {
     return PriorityLevel.medium;
   }
 
+  // Aliases used by mesh_screen
+  EmergencyType classify(String message) => classifyEmergency(message);
+  PriorityLevel prioritize(String message) =>
+      assessPriority(message, classifyEmergency(message));
+
   String generateSuggestion(EmergencyType type) {
     switch (type) {
       case EmergencyType.medical:
@@ -65,7 +71,7 @@ class AiService extends ChangeNotifier {
         return 'Stay low, crawl to exit. Do not use elevators.';
       case EmergencyType.flood:
         return 'Move to higher ground immediately.';
-      case EmergencyType.earthquake:
+      case EmergencyType.trapped:
         return 'Drop, Cover, Hold On. Stay away from windows.';
       case EmergencyType.rescue:
         return 'Stay visible. Use whistle to signal rescuers.';
