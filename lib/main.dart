@@ -14,8 +14,14 @@ import 'firebase_options.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  await perms.requestAllPermissions();
-  await NotificationService().initialize();
+  perms.requestAllPermissions();
+
+  // Initialize push notifications
+  try {
+    await NotificationService().initialize();
+  } catch (e) {
+    debugPrint('NotificationService init failed: $e');
+  }
 
   final aiService = AiService();
   final locationService = LocationService();
