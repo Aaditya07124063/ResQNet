@@ -38,7 +38,7 @@ class ResQNetApp extends StatelessWidget {
               ),
             );
           }
-          if (snapshot.hasData) {
+          if (snapshot.hasData && snapshot.data != null) {
             return const HomeScreen();
           }
           return const LoginScreen();
