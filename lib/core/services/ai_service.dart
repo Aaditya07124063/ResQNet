@@ -1,51 +1,76 @@
+import 'package:flutter/foundation.dart';
 import '../models/emergency_message.dart';
 
-class AiService {
-  static const List<String> _criticalKeywords = [
-    'trapped', 'dying', 'critical', 'unconscious', 'bleeding heavily',
-    'child trapped', 'building collapsed', 'cannot breathe', 'drowning',
-  ];
-  static const List<String> _highKeywords = [
-    'injured', 'stuck', 'missing', 'smoke', 'water rising', 'need rescue',
-    'fire spreading', 'hurt', 'accident', 'help', 'emergency',
-  ];
-  static const List<String> _mediumKeywords = [
-    'need food', 'need water', 'shelter needed', 'lost', 'stranded',
-    'no signal', 'need medicine', 'sick',
-  ];
+class AiService extends ChangeNotifier {
+  static const Map<EmergencyType, List<String>> _keywords = {
+    EmergencyType.medical: [
+      'heart', 'blood', 'injury', 'hospital', 'pain',
+      'unconscious', 'breathing', 'medical', 'doctor', 'ambulance', 'wounded',
+    ],
+    EmergencyType.fire: [
+      'fire', 'burning', 'smoke', 'flame', 'blaze', 'explosion',
+    ],
+    EmergencyType.flood: [
+      'flood', 'water', 'drowning', 'submerged', 'rain', 'river', 'overflow',
+    ],
+    EmergencyType.earthquake: [
+      'earthquake', 'tremor', 'quake', 'collapse', 'rubble', 'building fell',
+    ],
+    EmergencyType.rescue: [
+      'trapped', 'stuck', 'rescue', 'help', 'missing', 'lost',
+    ],
+  };
 
-  PriorityLevel prioritize(String text) {
-    final lower = text.toLowerCase();
-    if (_criticalKeywords.any((k) => lower.contains(k))) {
-      return PriorityLevel.critical;
-    }
-    if (_highKeywords.any((k) => lower.contains(k))) {
-      return PriorityLevel.high;
-    }
-    if (_mediumKeywords.any((k) => lower.contains(k))) {
-      return PriorityLevel.medium;
-    }
-    return PriorityLevel.low;
-  }
+  static const Map<PriorityLevel, List<String>> _priorityKeywords = {
+    PriorityLevel.critical: [
+      'dying', 'critical', 'urgent', 'immediate', 'life threatening',
+      'unconscious', 'not breathing',
+    ],
+    PriorityLevel.high: [
+      'serious', 'severe', 'major', 'bad', 'dangerous', 'emergency',
+    ],
+    PriorityLevel.medium: [
+      'injured', 'hurt', 'trapped', 'need help', 'assistance',
+    ],
+  };
 
-  EmergencyType classify(String text) {
-    final lower = text.toLowerCase();
-    if (lower.contains('fire') || lower.contains('burn')) {
-      return EmergencyType.fire;
-    }
-    if (lower.contains('flood') || lower.contains('water') || lower.contains('drown')) {
-      return EmergencyType.flood;
-    }
-    if (lower.contains('medical') || lower.contains('bleed') ||
-        lower.contains('heart') || lower.contains('breath')) {
-      return EmergencyType.medical;
-    }
-    if (lower.contains('trap') || lower.contains('stuck') || lower.contains('collapse')) {
-      return EmergencyType.trapped;
-    }
-    if (lower.contains('rescue') || lower.contains('help') || lower.contains('missing')) {
-      return EmergencyType.rescue;
+  EmergencyType classifyEmergency(String message) {
+    final lower = message.toLowerCase();
+    for (final entry in _keywords.entries) {
+      for (final keyword in entry.value) {
+        if (lower.contains(keyword)) return entry.key;
+      }
     }
     return EmergencyType.general;
+  }
+
+  PriorityLevel assessPriority(String message, EmergencyType type) {
+    final lower = message.toLowerCase();
+    for (final entry in _priorityKeywords.entries) {
+      for (final keyword in entry.value) {
+        if (lower.contains(keyword)) return entry.key;
+      }
+    }
+    if (type == EmergencyType.medical || type == EmergencyType.fire) {
+      return PriorityLevel.high;
+    }
+    return PriorityLevel.medium;
+  }
+
+  String generateSuggestion(EmergencyType type) {
+    switch (type) {
+      case EmergencyType.medical:
+        return 'Keep patient calm. Do not move if spinal injury suspected.';
+      case EmergencyType.fire:
+        return 'Stay low, crawl to exit. Do not use elevators.';
+      case EmergencyType.flood:
+        return 'Move to higher ground immediately.';
+      case EmergencyType.earthquake:
+        return 'Drop, Cover, Hold On. Stay away from windows.';
+      case EmergencyType.rescue:
+        return 'Stay visible. Use whistle to signal rescuers.';
+      case EmergencyType.general:
+        return 'Stay calm. Follow official instructions.';
+    }
   }
 }
