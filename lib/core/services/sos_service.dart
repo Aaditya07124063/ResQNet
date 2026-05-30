@@ -1,57 +1,79 @@
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
-import '../models/emergency_message.dart';
 import '../models/sos_alert.dart';
-import 'location_service.dart';
-import 'ai_service.dart';
+import '../models/emergency_message.dart';
+import '../services/ai_service.dart';
+import '../services/location_service.dart';
+import '../services/firebase_service.dart';
+import '../services/notification_service.dart';
 
 class SosService extends ChangeNotifier {
-  final List<SosAlert> _alerts = [];
-  List<SosAlert> get alerts => List.unmodifiable(_alerts);
+  final AiService _aiService;
+  final LocationService _locationService;
+  final FirebaseService _firebaseService = FirebaseService();
+  final NotificationService _notificationService = NotificationService();
+  final _uuid = const Uuid();
 
-  Future<SosAlert> createAlert({
+  final List<SosAlert> _alerts = [];
+  bool _sosActive = false;
+
+  SosService(this._aiService, this._locationService);
+
+  List<SosAlert> get alerts => List.unmodifiable(_alerts);
+  bool get sosActive => _sosActive;
+
+  Future<SosAlert> triggerSos({
+    required String userId,
+    required String userName,
     required SosCategory category,
     required String message,
-    required LocationService locationService,
-    required AiService aiService,
   }) async {
-    final position = await locationService.getCurrentPosition();
-    final priority = aiService.prioritize(message);
+    final position = await _locationService.getCurrentLocation();
     final alert = SosAlert(
-      id: const Uuid().v4(),
-      userId: 'user_local',
+      id: _uuid.v4(),
+      userId: userId,
+      userName: userName,
       category: category,
       message: message,
       latitude: position?.latitude,
       longitude: position?.longitude,
       timestamp: DateTime.now(),
-      priority: priority,
+      status: SosStatus.active,
     );
-    _alerts.add(alert);
+
+    _alerts.insert(0, alert);
+    _sosActive = true;
     notifyListeners();
+
+    await _firebaseService.uploadSosAlert(alert);
+    await _notificationService.broadcastSosNotification(alert);
+
     return alert;
   }
 
-  EmergencyMessage alertToMessage(SosAlert alert) => EmergencyMessage(
-        id: alert.id,
-        senderId: alert.userId,
-        senderName: 'Me',
-        content: '[SOS] ${alert.category.name.toUpperCase()}: ${alert.message}',
-        type: _categoryToType(alert.category),
-        priority: alert.priority,
-        timestamp: alert.timestamp,
-        latitude: alert.latitude,
-        longitude: alert.longitude,
-      );
+  EmergencyMessage sosToBroadcastMessage(SosAlert alert, String senderName) {
+    final type = _aiService.classifyEmergency(alert.message);
+    final priority = _aiService.assessPriority(alert.message, type);
 
-  EmergencyType _categoryToType(SosCategory cat) {
-    switch (cat) {
-      case SosCategory.medical: return EmergencyType.medical;
-      case SosCategory.fire: return EmergencyType.fire;
-      case SosCategory.flood: return EmergencyType.flood;
-      case SosCategory.rescue: return EmergencyType.rescue;
-      case SosCategory.trapped: return EmergencyType.trapped;
-      case SosCategory.other: return EmergencyType.general;
+    return EmergencyMessage(
+      id: alert.id,
+      senderId: alert.userId,
+      senderName: senderName,
+      message: alert.message,
+      type: type,
+      priority: priority,
+      latitude: alert.latitude,
+      longitude: alert.longitude,
+      timestamp: alert.timestamp,
+    );
+  }
+
+  void cancelSos(String alertId) {
+    final idx = _alerts.indexWhere((a) => a.id == alertId);
+    if (idx != -1) {
+      _alerts[idx].status = SosStatus.resolved;
+      _sosActive = false;
+      notifyListeners();
     }
   }
 }

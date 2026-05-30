@@ -1,25 +1,36 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'core/services/mesh_service.dart';
-import 'core/services/sos_service.dart';
-import 'core/services/location_service.dart';
+import 'app.dart';
 import 'core/services/ai_service.dart';
+import 'core/services/location_service.dart';
+import 'core/services/mesh_service.dart';
+import 'core/services/notification_service.dart';
+import 'core/services/sos_service.dart';
+import 'core/utils/permission_handler.dart' as perms;
 import 'features/auth/auth_service.dart';
 import 'firebase_options.dart';
-import 'app.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await perms.requestAllPermissions();
+  await NotificationService().initialize();
+
+  final aiService = AiService();
+  final locationService = LocationService();
+
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthService()),
+        ChangeNotifierProvider(create: (_) => aiService),
+        ChangeNotifierProvider(create: (_) => locationService),
+        ChangeNotifierProvider(
+          create: (_) => SosService(aiService, locationService),
+        ),
         ChangeNotifierProvider(create: (_) => MeshService()),
-        ChangeNotifierProvider(create: (_) => SosService()),
-        ChangeNotifierProvider(create: (_) => LocationService()),
-        Provider(create: (_) => AiService()),
+        ChangeNotifierProvider(create: (_) => NotificationService()),
       ],
       child: const ResQNetApp(),
     ),
