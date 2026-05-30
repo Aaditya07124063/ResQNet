@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "349015883051",
+    "project_id": "resqnet-2024",
+    "storage_bucket": "resqnet-2024.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:349015883051:android:596e641dbd9d2bbc1f596e",
+        "android_client_info": {
+          "package_name": "com.example.resqnet"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAKe4JRJkY6jPP6DNsuuMw31hkkwq2Qp_g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
