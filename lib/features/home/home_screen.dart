@@ -20,8 +20,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _init();
   }
 
-  void _init() {
-    requestAllPermissions();
+  Future<void> _init() async {
+    await requestAllPermissions();
+    if (!mounted) return;
     final mesh = context.read<MeshService>();
     final location = context.read<LocationService>();
     mesh.start('ResQNet User');

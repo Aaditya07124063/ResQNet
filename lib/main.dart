@@ -7,14 +7,12 @@ import 'core/services/location_service.dart';
 import 'core/services/mesh_service.dart';
 import 'core/services/notification_service.dart';
 import 'core/services/sos_service.dart';
-import 'core/utils/permission_handler.dart' as perms;
 import 'features/auth/auth_service.dart';
 import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  perms.requestAllPermissions();
 
   // Initialize push notifications
   try {
