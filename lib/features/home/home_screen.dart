@@ -20,14 +20,14 @@ class _HomeScreenState extends State<HomeScreen> {
     _init();
   }
 
-  Future<void> _init() async {
+ Future<void> _init() async {
     await requestAllPermissions();
     if (!mounted) return;
     final mesh = context.read<MeshService>();
     final location = context.read<LocationService>();
-    await mesh.start('ResQNet User');
-    await location.getCurrentPosition();
-  }
+    mesh.start('ResQNet User');
+    location.getCurrentPosition();
+}
 
   @override
   Widget build(BuildContext context) {
