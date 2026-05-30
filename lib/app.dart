@@ -27,7 +27,10 @@ class ResQNetApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
+        stream: FirebaseAuth.instance.authStateChanges().timeout(
+          const Duration(seconds: 5),
+          onTimeout: (sink) => sink.add(null),
+        ),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
