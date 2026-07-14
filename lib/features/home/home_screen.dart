@@ -19,7 +19,7 @@ import '../../features/profile/profile_screen.dart';
 import '../../features/emergency_contacts/emergency_contacts_screen.dart';
 import '../../features/sos_history/sos_history_screen.dart';
 import '../check_in/check_in_screen.dart';
-import '../crash_detection/crash_countdown_dialog.dart';
+import '../crash_countdown/crash_countdown_dialog.dart';
 import '../evacuation/evacuation_screen.dart';
 import '../fake_call/fake_call_screen.dart';
 import '../first_aid/first_aid_screen.dart';
@@ -137,7 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
       id: const Uuid().v4(),
       senderId: name,
       senderName: name,
-      content:
+      message:
           '$text\nBlood: ${profile.bloodGroup} | Allergies: ${profile.allergies}',
       type: EmergencyType.rescue,
       priority: PriorityLevel.critical,
@@ -168,7 +168,7 @@ class _HomeScreenState extends State<HomeScreen> {
       id: const Uuid().v4(),
       senderId: name,
       senderName: name,
-      content: '✅ I AM SAFE — $name is safe.$locText',
+      message: '✅ I AM SAFE — $name is safe.$locText',
       type: EmergencyType.general,
       priority: PriorityLevel.low,
       latitude: lat,

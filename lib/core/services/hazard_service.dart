@@ -146,7 +146,7 @@ class HazardService extends ChangeNotifier {
       id: hazard.id,
       senderId: reporter,
       senderName: reporter,
-      content: '$hazardPrefix${jsonEncode(hazard.toJson())}',
+      message: '$hazardPrefix${jsonEncode(hazard.toJson())}',
       type: EmergencyType.general,
       priority: PriorityLevel.medium,
       latitude: latitude,
@@ -159,9 +159,9 @@ class HazardService extends ChangeNotifier {
   void syncFromMesh(List<EmergencyMessage> meshMessages) {
     bool added = false;
     for (final m in meshMessages) {
-      if (!m.content.startsWith(hazardPrefix)) continue;
+      if (!m.message.startsWith(hazardPrefix)) continue;
       try {
-        final json = jsonDecode(m.content.substring(hazardPrefix.length));
+        final json = jsonDecode(m.message.substring(hazardPrefix.length));
         final h = Hazard.fromJson(json);
         if (!_hazards.containsKey(h.id) && !h.isExpired) {
           _hazards[h.id] = h;

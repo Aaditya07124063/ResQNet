@@ -74,7 +74,7 @@ class _CrashCountdownDialogState extends State<CrashCountdownDialog> {
       id: const Uuid().v4(),
       senderId: name,
       senderName: name,
-      content: '🚗 VEHICLE CRASH DETECTED — AUTO SOS$speedStr\n'
+      message: '🚗 VEHICLE CRASH DETECTED — AUTO SOS$speedStr\n'
           'Blood: ${profileService.bloodGroup} | Allergies: ${profileService.allergies}',
       type: EmergencyType.rescue,
       priority: PriorityLevel.critical,

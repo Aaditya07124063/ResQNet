@@ -58,7 +58,7 @@ class _MissingPersonScreenState extends State<MissingPersonScreen> {
       id: const Uuid().v4(),
       senderId: reporter,
       senderName: reporter,
-      content: '$prefix$payload',
+      message: '$prefix$payload',
       type: EmergencyType.rescue,
       priority: PriorityLevel.high,
       latitude: lat,
@@ -85,9 +85,9 @@ class _MissingPersonScreenState extends State<MissingPersonScreen> {
   List<Map<String, dynamic>> _receivedReports(MeshService mesh) {
     final reports = <Map<String, dynamic>>[];
     for (final m in mesh.messages) {
-      if (m.content.startsWith(prefix)) {
+      if (m.message.startsWith(prefix)) {
         try {
-          reports.add(jsonDecode(m.content.substring(prefix.length)));
+          reports.add(jsonDecode(m.message.substring(prefix.length)));
         } catch (_) {}
       }
     }

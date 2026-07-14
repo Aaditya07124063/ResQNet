@@ -7,12 +7,14 @@ class ProfileService extends ChangeNotifier {
   String _bloodGroup = '';
   String _allergies = '';
   String _medications = '';
+  String _emergencyContact = '';
   String _photoUrl = '';
 
   String get name => _name;
   String get bloodGroup => _bloodGroup;
   String get allergies => _allergies;
   String get medications => _medications;
+  String get emergencyContact => _emergencyContact;
   String get photoUrl => _photoUrl;
 
   Future<void> loadProfile() async {
@@ -30,6 +32,7 @@ class ProfileService extends ChangeNotifier {
         _bloodGroup = data['bloodGroup'] ?? '';
         _allergies = data['allergies'] ?? '';
         _medications = data['medications'] ?? '';
+        _emergencyContact = data['emergencyContact'] ?? '';
         _photoUrl = data['photoUrl'] ?? '';
         notifyListeners();
       }
