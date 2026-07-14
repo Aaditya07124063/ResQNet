@@ -28,10 +28,15 @@ subprojects {
     project.evaluationDependsOn(":app")
     // Force all plugin libraries to compile against SDK 36, even if they
     // hard-code an older compileSdk in their own build.gradle (e.g. objectbox)
-    afterEvaluate {
-        extensions.findByType(com.android.build.gradle.LibraryExtension::class.java)?.apply {
+    val forceCompileSdk: (org.gradle.api.Project) -> Unit = { p ->
+        p.extensions.findByType(com.android.build.gradle.LibraryExtension::class.java)?.apply {
             compileSdk = 36
         }
+    }
+    if (state.executed) {
+        forceCompileSdk(this)
+    } else {
+        afterEvaluate { forceCompileSdk(this) }
     }
 }
 
