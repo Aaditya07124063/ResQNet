@@ -1,3 +1,4 @@
+import 'package:geolocator/geolocator.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../models/sos_alert.dart';
@@ -28,7 +29,13 @@ class SosService extends ChangeNotifier {
     required SosCategory category,
     required String message,
   }) async {
-    final position = await _locationService.getCurrentLocation();
+    Position? position;
+    try {
+      position = await _locationService.getCurrentLocation();
+    } catch (e) {
+      debugPrint('Location fetch failed: $e');
+    }
+
     final alert = SosAlert(
       id: _uuid.v4(),
       userId: userId,
@@ -45,8 +52,15 @@ class SosService extends ChangeNotifier {
     _sosActive = true;
     notifyListeners();
 
-    await _firebaseService.uploadSosAlert(alert);
-    await _notificationService.broadcastSosNotification(alert);
+    // Upload to Firestore (non-blocking — don't let this stop SOS)
+    _firebaseService.uploadSosAlert(alert).catchError(
+          (e) => debugPrint('Firebase SOS upload error: $e'),
+        );
+
+    // Send push notification to all users
+    _notificationService.broadcastSosNotification(alert).catchError(
+          (e) => debugPrint('SOS notification error: $e'),
+        );
 
     return alert;
   }
@@ -59,7 +73,7 @@ class SosService extends ChangeNotifier {
       id: alert.id,
       senderId: alert.userId,
       senderName: senderName,
-      content: alert.message,
+      message: alert.message,
       type: type,
       priority: priority,
       latitude: alert.latitude,

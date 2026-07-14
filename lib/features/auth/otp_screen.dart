@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:pinput/pinput.dart';
@@ -14,6 +15,33 @@ class OtpScreen extends StatefulWidget {
 
 class _OtpScreenState extends State<OtpScreen> {
   final _otpCtrl = TextEditingController();
+  int _secondsLeft = 30;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimer();
+  }
+
+  void _startTimer() {
+    setState(() => _secondsLeft = 30);
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_secondsLeft == 0) {
+        timer.cancel();
+      } else {
+        setState(() => _secondsLeft--);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _otpCtrl.dispose();
+    super.dispose();
+  }
 
   Future<void> _verify() async {
     if (_otpCtrl.text.length < 6) {
@@ -33,6 +61,31 @@ class _OtpScreenState extends State<OtpScreen> {
             backgroundColor: AppColors.emergencyRed),
       );
     }
+  }
+
+  Future<void> _resendOtp() async {
+    final auth = context.read<AuthService>();
+    _otpCtrl.clear();
+    await auth.sendOtp(
+      phoneNumber: widget.phoneNumber,
+      onCodeSent: () {
+        _startTimer();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('OTP resent successfully!'),
+            backgroundColor: AppColors.safeGreen,
+          ),
+        );
+      },
+      onError: (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e),
+            backgroundColor: AppColors.emergencyRed,
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -81,13 +134,34 @@ class _OtpScreenState extends State<OtpScreen> {
                 defaultPinTheme: defaultPinTheme,
                 focusedPinTheme: defaultPinTheme.copyWith(
                   decoration: defaultPinTheme.decoration!.copyWith(
-                    border: Border.all(color: AppColors.emergencyRed, width: 2),
+                    border:
+                        Border.all(color: AppColors.emergencyRed, width: 2),
                   ),
                 ),
                 onCompleted: (_) => _verify(),
               ),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 24),
+            // Timer and Resend
+            Center(
+              child: _secondsLeft > 0
+                  ? Text(
+                      'Resend OTP in $_secondsLeft seconds',
+                      style: const TextStyle(
+                          color: AppColors.textSecondary, fontSize: 14),
+                    )
+                  : TextButton(
+                      onPressed: auth.isLoading ? null : _resendOtp,
+                      child: const Text(
+                        'Resend OTP',
+                        style: TextStyle(
+                            color: AppColors.emergencyRed,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               height: 52,

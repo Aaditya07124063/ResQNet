@@ -3,7 +3,8 @@ import '../core/constants/app_colors.dart';
 
 class SosButton extends StatefulWidget {
   final VoidCallback onPressed;
-  const SosButton({super.key, required this.onPressed});
+  final bool isActive;
+  const SosButton({super.key, required this.onPressed, this.isActive = false});
 
   @override
   State<SosButton> createState() => _SosButtonState();
@@ -11,64 +12,65 @@ class SosButton extends StatefulWidget {
 
 class _SosButtonState extends State<SosButton>
     with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double> _scale;
-  late Animation<double> _opacity;
+  late AnimationController _controller;
+  late Animation<double> _scaleAnim;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 1),
-    )..repeat(reverse: true);
-    _scale = Tween(begin: 1.0, end: 1.1)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
-    _opacity = Tween(begin: 0.6, end: 1.0).animate(_ctrl);
+    _controller = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1000))
+      ..repeat(reverse: true);
+    _scaleAnim = Tween<double>(begin: 1.0, end: 1.15).animate(
+        CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (_, __) => Transform.scale(
-        scale: _scale.value,
-        child: Opacity(
-          opacity: _opacity.value,
-          child: GestureDetector(
-            onTap: widget.onPressed,
-            child: Container(
-              width: 160,
-              height: 160,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.emergencyRed,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.emergencyRed.withOpacity(0.5),
-                    blurRadius: 30,
-                    spreadRadius: 10,
-                  )
-                ],
+      animation: _scaleAnim,
+      builder: (_, child) => Transform.scale(
+        scale: widget.isActive ? _scaleAnim.value : 1.0,
+        child: child,
+      ),
+      child: GestureDetector(
+        onTap: widget.onPressed,
+        child: Container(
+          width: 160,
+          height: 160,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: widget.isActive
+                ? AppColors.emergencyRed
+                : const Color(0xFFB71C1C),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.emergencyRed.withOpacity(0.6),
+                blurRadius: widget.isActive ? 40 : 20,
+                spreadRadius: widget.isActive ? 10 : 5,
               ),
-              child: const Center(
-                child: Text(
-                  'SOS',
-                  style: TextStyle(
+            ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.emergency, color: Colors.white, size: 52),
+              const SizedBox(height: 6),
+              Text(
+                widget.isActive ? 'SOS ACTIVE' : 'SOS',
+                style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 48,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 4,
-                  ),
-                ),
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 2),
               ),
-            ),
+            ],
           ),
         ),
       ),

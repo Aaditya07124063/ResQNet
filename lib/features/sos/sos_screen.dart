@@ -1,4 +1,7 @@
+import 'dart:async';
+import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/models/sos_alert.dart';
@@ -18,6 +21,7 @@ class _SosScreenState extends State<SosScreen> {
   SosCategory _selectedCategory = SosCategory.general;
   final _messageController = TextEditingController();
   bool _isSending = false;
+  int? _batteryLevel;
 
   static const List<Map<String, dynamic>> _categories = [
     {'type': SosCategory.medical, 'icon': Icons.local_hospital, 'label': 'Medical', 'color': Color(0xFFD32F2F)},
@@ -29,9 +33,48 @@ class _SosScreenState extends State<SosScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _readBattery();
+  }
+
+  Future<void> _readBattery() async {
+    try {
+      final level = await Battery().batteryLevel;
+      if (mounted) setState(() => _batteryLevel = level);
+    } catch (_) {}
+  }
+
+  @override
   void dispose() {
     _messageController.dispose();
     super.dispose();
+  }
+
+  Color _batteryColor(int level) {
+    if (level > 50) return AppColors.connectedGreen;
+    if (level > 20) return AppColors.primaryOrange;
+    return AppColors.emergencyRed;
+  }
+
+  IconData _batteryIcon(int level) {
+    if (level > 75) return Icons.battery_full;
+    if (level > 50) return Icons.battery_5_bar;
+    if (level > 25) return Icons.battery_3_bar;
+    if (level > 10) return Icons.battery_1_bar;
+    return Icons.battery_alert;
+  }
+
+  Future<void> _confirmAndSend() async {
+    HapticFeedback.heavyImpact();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _CountdownDialog(),
+    );
+    if (confirmed == true) {
+      await _broadcastSos();
+    }
   }
 
   Future<void> _broadcastSos() async {
@@ -54,13 +97,23 @@ class _SosScreenState extends State<SosScreen> {
             : _messageController.text.trim(),
       );
 
-      final broadcastMsg = sos.sosToBroadcastMessage(
-        alert,
-        auth.currentUser?.displayName ??
-            auth.currentUser?.phoneNumber ??
-            'Unknown',
-      );
-      await mesh.broadcast(broadcastMsg);
+      int? battery;
+      try {
+        battery = await Battery().batteryLevel;
+      } catch (_) {}
+
+      final broadcastMsg = sos
+          .sosToBroadcastMessage(
+            alert,
+            auth.currentUser?.displayName ??
+                auth.currentUser?.phoneNumber ??
+                'Unknown',
+          )
+          .copyWith(batteryLevel: battery);
+
+      await mesh.broadcastMessage(broadcastMsg);
+
+      HapticFeedback.vibrate();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -81,8 +134,8 @@ class _SosScreenState extends State<SosScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'),
-              backgroundColor: Colors.red),
+          SnackBar(
+              content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -156,8 +209,10 @@ class _SosScreenState extends State<SosScreen> {
                 final isSelected = _selectedCategory == cat['type'];
                 final color = cat['color'] as Color;
                 return GestureDetector(
-                  onTap: () =>
-                      setState(() => _selectedCategory = cat['type']),
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() => _selectedCategory = cat['type']);
+                  },
                   child: Container(
                     decoration: BoxDecoration(
                       color: isSelected
@@ -213,50 +268,84 @@ class _SosScreenState extends State<SosScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            if (location.currentPosition != null)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.cardDark,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.location_on,
-                        color: AppColors.connectedGreen, size: 20),
-                    const SizedBox(width: 8),
-                    Text(
-                      'GPS: ${location.latitude!.toStringAsFixed(4)}, ${location.longitude!.toStringAsFixed(4)}',
-                      style: const TextStyle(
-                          color: AppColors.textSecondary, fontSize: 13),
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.cardDark,
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  ],
+                    child: Row(
+                      children: [
+                        Icon(
+                          location.currentPosition != null
+                              ? Icons.location_on
+                              : Icons.location_off,
+                          color: location.currentPosition != null
+                              ? AppColors.connectedGreen
+                              : AppColors.textSecondary,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            location.currentPosition != null
+                                ? '${location.currentPosition!.latitude.toStringAsFixed(4)}, ${location.currentPosition!.longitude.toStringAsFixed(4)}'
+                                : 'GPS not available',
+                            style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              )
-            else
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.cardDark,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.location_off,
-                        color: AppColors.textSecondary, size: 20),
-                    SizedBox(width: 8),
-                    Text('GPS not available',
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.cardDark,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _batteryLevel != null
+                            ? _batteryIcon(_batteryLevel!)
+                            : Icons.battery_unknown,
+                        color: _batteryLevel != null
+                            ? _batteryColor(_batteryLevel!)
+                            : AppColors.textSecondary,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _batteryLevel != null
+                            ? '$_batteryLevel%'
+                            : '--',
                         style: TextStyle(
-                            color: AppColors.textSecondary, fontSize: 13)),
-                  ],
+                          color: _batteryLevel != null
+                              ? _batteryColor(_batteryLevel!)
+                              : AppColors.textSecondary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+              ],
+            ),
             const SizedBox(height: 32),
             SizedBox(
               width: double.infinity,
               height: 56,
               child: ElevatedButton.icon(
-                onPressed: _isSending ? null : _broadcastSos,
+                onPressed: _isSending ? null : _confirmAndSend,
                 icon: _isSending
                     ? const SizedBox(
                         width: 20,
@@ -281,6 +370,112 @@ class _SosScreenState extends State<SosScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _CountdownDialog extends StatefulWidget {
+  const _CountdownDialog();
+
+  @override
+  State<_CountdownDialog> createState() => _CountdownDialogState();
+}
+
+class _CountdownDialogState extends State<_CountdownDialog>
+    with SingleTickerProviderStateMixin {
+  int _seconds = 5;
+  Timer? _timer;
+  late AnimationController _animController;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 5),
+    )..forward();
+
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      HapticFeedback.mediumImpact();
+      if (_seconds == 1) {
+        t.cancel();
+        if (mounted) Navigator.pop(context, true);
+      } else {
+        if (mounted) setState(() => _seconds--);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _animController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.surfaceDark,
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.warning_amber,
+              color: AppColors.emergencyRed, size: 48),
+          const SizedBox(height: 16),
+          const Text('Sending SOS in',
+              style:
+                  TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+          const SizedBox(height: 8),
+          Text(
+            '$_seconds',
+            style: const TextStyle(
+                color: AppColors.emergencyRed,
+                fontSize: 64,
+                fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          AnimatedBuilder(
+            animation: _animController,
+            builder: (_, __) => LinearProgressIndicator(
+              value: 1 - _animController.value,
+              backgroundColor: AppColors.cardDark,
+              color: AppColors.emergencyRed,
+              minHeight: 6,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'SOS will be broadcast to all nearby devices automatically.',
+            textAlign: TextAlign.center,
+            style:
+                TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                HapticFeedback.heavyImpact();
+                Navigator.pop(context, false);
+              },
+              icon: const Icon(Icons.cancel,
+                  color: AppColors.textSecondary),
+              label: const Text('Cancel SOS',
+                  style: TextStyle(color: AppColors.textSecondary)),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: AppColors.textSecondary),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

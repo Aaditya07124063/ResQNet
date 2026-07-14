@@ -8,182 +8,176 @@ import '../models/sos_alert.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-    debugPrint('Background message: ${message.messageId}');
+  final plugin = FlutterLocalNotificationsPlugin();
+  const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+  await plugin.initialize(const InitializationSettings(android: androidSettings));
+
+  const channel = AndroidNotificationChannel(
+    'resqnet_emergency',
+    'Emergency Alerts',
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
+  );
+
+  final notification = message.notification;
+  if (notification != null) {
+    plugin.show(
+      notification.hashCode,
+      notification.title,
+      notification.body,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          channel.id,
+          channel.name,
+          importance: Importance.max,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+          color: const Color(0xFFD32F2F),
+        ),
+      ),
+      payload: jsonEncode(message.data),
+    );
+  }
 }
 
 class NotificationService extends ChangeNotifier {
-    static final NotificationService _instance = NotificationService._();
-    factory NotificationService() => _instance;
-    NotificationService._();
+  static final NotificationService _instance = NotificationService._();
+  factory NotificationService() => _instance;
+  NotificationService._();
 
-    final FirebaseMessaging _fcm = FirebaseMessaging.instance;
-    final FlutterLocalNotificationsPlugin _localNotifications =
-        FlutterLocalNotificationsPlugin();
+  final FirebaseMessaging _fcm = FirebaseMessaging.instance;
+  final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
+  bool _initialized = false;
 
-    static const AndroidNotificationChannel _channel =
-        AndroidNotificationChannel(
-      'resqnet_emergency',
-      'Emergency Alerts',
-      description: 'Critical emergency notifications from ResQNet',
-      importance: Importance.max,
-      playSound: true,
-      enableVibration: true,
+  static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
+    'resqnet_emergency',
+    'Emergency Alerts',
+    description: 'Critical emergency notifications from ResQNet',
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
+  );
+
+  Future<void> initialize() async {
+    if (_initialized) return;
+    _initialized = true;
+
+    // Background handler must be registered first
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+    // Set foreground notification presentation
+    await _fcm.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
     );
 
-    Future<void> initialize() async {
-        FirebaseMessaging.onBackgroundMessage(
-            firebaseMessagingBackgroundHandler);
+    // Local notifications setup
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const iosSettings = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
+    await _localNotifications.initialize(
+      const InitializationSettings(android: androidSettings, iOS: iosSettings),
+      onDidReceiveNotificationResponse: (details) {
+        debugPrint('Notification tapped: ${details.payload}');
+      },
+    );
 
-        await _fcm.requestPermission(
-            alert: true,
-            badge: true,
-            sound: true,
-            criticalAlert: true,
-        );
+    // Create Android channel
+    await _localNotifications
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(_channel);
 
-        const androidSettings =
-            AndroidInitializationSettings('@mipmap/ic_launcher');
-        const iosSettings = DarwinInitializationSettings(
-            requestAlertPermission: true,
-            requestBadgePermission: true,
-            requestSoundPermission: true,
-        );
-        await _localNotifications.initialize(
-            const InitializationSettings(
-                android: androidSettings, iOS: iosSettings),
-            onDidReceiveNotificationResponse: (details) {
-                debugPrint('Notification tapped: ${details.payload}');
-            },
-        );
+    // Save FCM token
+    await _saveTokenToFirestore();
+    _fcm.onTokenRefresh.listen(_saveToken);
 
-        await _localNotifications
-            .resolvePlatformSpecificImplementation<
-                AndroidFlutterLocalNotificationsPlugin>()
-            ?.createNotificationChannel(_channel);
+    // Foreground messages
+    FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+  }
 
-        await _saveTokenToFirestore();
-        _fcm.onTokenRefresh.listen(_saveToken);
-
-        FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
-        FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
-
-        // Listen to Firestore for new SOS alerts
-        _listenForSosAlerts();
+  Future<void> _saveTokenToFirestore() async {
+    try {
+      final token = await _fcm.getToken();
+      if (token != null) await _saveToken(token);
+    } catch (e) {
+      debugPrint('FCM token fetch failed: $e');
     }
+  }
 
-    // Listen to sos_broadcasts collection in Firestore
-    void _listenForSosAlerts() {
-        final user = FirebaseAuth.instance.currentUser;
-        if (user == null) return;
-
-        FirebaseFirestore.instance
-            .collection('sos_broadcasts')
-            .where('notificationSent', isEqualTo: false)
-            .snapshots()
-            .listen((snapshot) {
-          for (final change in snapshot.docChanges) {
-              if (change.type == DocumentChangeType.added) {
-                  final data = change.doc.data();
-                  if (data == null) continue;
-
-                  // Don't notify for own SOS
-                  if (data['userId'] == user.uid) continue;
-
-                  _showLocalNotification(
-                      title:
-                          '🆘 ${data['category'] ?? 'EMERGENCY'} ALERT',
-                      body:
-                          '${data['userName']}: ${data['message']}',
-                      payload: jsonEncode(data),
-                  );
-              }
-          }
-        });
+  Future<void> _saveToken(String token) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('user_tokens')
+          .doc(user.uid)
+          .set({
+        'token': token,
+        'userId': user.uid,
+        'updatedAt': DateTime.now().toIso8601String(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('Token save error: $e');
     }
+  }
 
-    void _showLocalNotification({
-        required String title,
-        required String body,
-        String? payload,
-    }) {
-        _localNotifications.show(
-            DateTime.now().millisecondsSinceEpoch ~/ 1000,
-            title,
-            body,
-            NotificationDetails(
-                android: AndroidNotificationDetails(
-                    _channel.id,
-                    _channel.name,
-                    channelDescription: _channel.description,
-                    importance: Importance.max,
-                    priority: Priority.high,
-                    icon: '@mipmap/ic_launcher',
-                    color: const Color(0xFFD32F2F),
-                ),
-                iOS: const DarwinNotificationDetails(
-                    presentAlert: true,
-                    presentBadge: true,
-                    presentSound: true,
-                ),
-            ),
-            payload: payload,
-        );
-    }
+  void _handleForegroundMessage(RemoteMessage message) {
+    final notification = message.notification;
+    if (notification == null) return;
 
-    Future<void> _saveTokenToFirestore() async {
-        final token = await _fcm.getToken();
-        if (token != null) await _saveToken(token);
-    }
+    _localNotifications.show(
+      notification.hashCode,
+      notification.title,
+      notification.body,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channel.id,
+          _channel.name,
+          channelDescription: _channel.description,
+          importance: Importance.max,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+          color: const Color(0xFFD32F2F),
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+      payload: jsonEncode(message.data),
+    );
+  }
 
-    Future<void> _saveToken(String token) async {
-        final user = FirebaseAuth.instance.currentUser;
-        if (user == null) return;
-        try {
-            await FirebaseFirestore.instance
-                .collection('user_tokens')
-                .doc(user.uid)
-                .set({
-              'token': token,
-              'userId': user.uid,
-              'updatedAt': FieldValue.serverTimestamp(),
-            }, SetOptions(merge: true));
-        } catch (e) {
-            debugPrint('Token save error: $e');
-        }
-    }
+  void _handleNotificationTap(RemoteMessage message) {
+    debugPrint('Notification tapped: ${message.data}');
+  }
 
-    void _handleForegroundMessage(RemoteMessage message) {
-        final notification = message.notification;
-        if (notification == null) return;
-        _showLocalNotification(
-            title: notification.title ?? 'Emergency Alert',
-            body: notification.body ?? '',
-            payload: jsonEncode(message.data),
-        );
+  Future<void> broadcastSosNotification(SosAlert alert) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('sos_broadcasts')
+          .doc(alert.id)
+          .set({
+        'alertId': alert.id,
+        'userId': alert.userId,
+        'userName': alert.userName,
+        'category': alert.category.name.toUpperCase(),
+        'message': alert.message,
+        'latitude': alert.latitude,
+        'longitude': alert.longitude,
+        'timestamp': DateTime.now().toIso8601String(),
+        'notificationSent': false,
+      });
+    } catch (e) {
+      debugPrint('SOS broadcast error: $e');
     }
-
-    void _handleNotificationTap(RemoteMessage message) {
-        debugPrint('Notification tapped: ${message.data}');
-    }
-
-    Future<void> broadcastSosNotification(SosAlert alert) async {
-        try {
-            await FirebaseFirestore.instance
-                .collection('sos_broadcasts')
-                .doc(alert.id)
-                .set({
-              'alertId': alert.id,
-              'userId': alert.userId,
-              'userName': alert.userName,
-              'category': alert.category.name.toUpperCase(),
-              'message': alert.message,
-              'latitude': alert.latitude,
-              'longitude': alert.longitude,
-              'timestamp': FieldValue.serverTimestamp(),
-              'notificationSent': false,
-            });
-        } catch (e) {
-            debugPrint('SOS broadcast error: $e');
-        }
-    }
+  }
 }
