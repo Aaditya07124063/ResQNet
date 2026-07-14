@@ -26,6 +26,13 @@ rootProject.buildDir = file("../build")
 subprojects {
     project.buildDir = file("${rootProject.buildDir}/${project.name}")
     project.evaluationDependsOn(":app")
+    // Force all plugin libraries to compile against SDK 36, even if they
+    // hard-code an older compileSdk in their own build.gradle (e.g. objectbox)
+    afterEvaluate {
+        extensions.findByType(com.android.build.gradle.LibraryExtension::class.java)?.apply {
+            compileSdk = 36
+        }
+    }
 }
 
 tasks.register("clean", Delete::class) {
