@@ -140,15 +140,21 @@ class _MeshScreenState extends State<MeshScreen>
       backgroundColor: AppColors.backgroundDark,
       appBar: AppBar(
         backgroundColor: AppColors.surfaceDark,
+        titleSpacing: 0,
         title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Mesh Network',
-                style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.bold)),
-            const SizedBox(width: 8),
+            const Flexible(
+              child: Text('Mesh',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18)),
+            ),
+            const SizedBox(width: 6),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
                 color: mesh.connectedCount > 0
                     ? AppColors.connectedGreen.withOpacity(0.2)
@@ -156,12 +162,13 @@ class _MeshScreenState extends State<MeshScreen>
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                '${mesh.connectedCount} connected',
+                '${mesh.connectedCount}',
                 style: TextStyle(
                     color: mesh.connectedCount > 0
                         ? AppColors.connectedGreen
                         : AppColors.textSecondary,
-                    fontSize: 12),
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -171,17 +178,15 @@ class _MeshScreenState extends State<MeshScreen>
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
-          Row(
-            children: [
-              const Text('Anon',
-                  style: TextStyle(
-                      color: AppColors.textSecondary, fontSize: 12)),
-              Switch(
-                value: _isAnonymous,
-                onChanged: (v) => setState(() => _isAnonymous = v),
-                activeColor: AppColors.emergencyRed,
-              ),
-            ],
+          IconButton(
+            tooltip: _isAnonymous ? 'Anonymous: ON' : 'Anonymous: OFF',
+            icon: Icon(
+              _isAnonymous ? Icons.visibility_off : Icons.visibility,
+              color: _isAnonymous
+                  ? AppColors.emergencyRed
+                  : AppColors.textSecondary,
+            ),
+            onPressed: () => setState(() => _isAnonymous = !_isAnonymous),
           ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.translate, color: AppColors.textPrimary),

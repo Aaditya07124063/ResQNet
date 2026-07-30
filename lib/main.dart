@@ -4,16 +4,12 @@ import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart';
 import 'package:provider/provider.dart';
 import 'app.dart';
 import 'core/services/ai_service.dart';
-import 'core/services/check_in_service.dart';
 import 'core/services/crash_detection_service.dart';
 import 'core/services/emergency_contacts_service.dart';
-import 'core/services/hazard_service.dart';
-import 'core/services/location_log_service.dart';
 import 'core/services/location_service.dart';
 import 'core/services/mesh_service.dart';
 import 'core/services/notification_service.dart';
 import 'core/services/profile_service.dart';
-import 'core/services/safe_zone_service.dart';
 import 'core/services/seismic_service.dart';
 import 'core/services/sos_service.dart';
 import 'core/services/theme_service.dart';
@@ -47,10 +43,6 @@ void main() async {
         ChangeNotifierProvider(create: (_) => EmergencyContactsService()),
         ChangeNotifierProvider(create: (_) => CrashDetectionService()),
         ChangeNotifierProvider(create: (_) => SeismicService()),
-        ChangeNotifierProvider(create: (_) => SafeZoneService()),
-        ChangeNotifierProvider(create: (_) => HazardService()),
-        ChangeNotifierProvider(create: (_) => CheckInService()),
-        ChangeNotifierProvider(create: (_) => LocationLogService()),
       ],
       child: const ResQNetApp(),
     ),

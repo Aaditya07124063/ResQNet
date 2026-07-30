@@ -6,9 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_routes.dart';
 import '../../core/models/emergency_message.dart';
-import '../../core/services/check_in_service.dart';
 import '../../core/services/crash_detection_service.dart';
-import '../../core/services/location_log_service.dart';
 import '../../core/services/mesh_service.dart';
 import '../../core/services/location_service.dart';
 import '../../core/services/notification_service.dart';
@@ -18,15 +16,7 @@ import '../../core/utils/permission_handler.dart' as perms;
 import '../../features/profile/profile_screen.dart';
 import '../../features/emergency_contacts/emergency_contacts_screen.dart';
 import '../../features/sos_history/sos_history_screen.dart';
-import '../check_in/check_in_screen.dart';
 import '../crash_countdown/crash_countdown_dialog.dart';
-import '../evacuation/evacuation_screen.dart';
-import '../fake_call/fake_call_screen.dart';
-import '../first_aid/first_aid_screen.dart';
-import '../hazard_map/hazard_map_screen.dart';
-import '../location_trail/location_trail_screen.dart';
-import '../missing_person/missing_person_screen.dart';
-import '../qr_profile/qr_profile_screen.dart';
 import '../seismic/earthquake_alert_dialog.dart';
 import '../../widgets/sos_button.dart';
 
@@ -59,9 +49,6 @@ class _HomeScreenState extends State<HomeScreen> {
       (e) => debugPrint('Mesh start error: $e'),
     );
 
-    // Location trail — saves GPS every 5 min for dead-phone recovery
-    context.read<LocationLogService>().start();
-
     // Vehicle crash detection
     final crashService = context.read<CrashDetectionService>();
     crashService.start();
@@ -89,63 +76,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ).then((_) => _quakeDialogOpen = false);
       }
     });
-
-    // Dead man's switch — check-in timer expired → auto SOS
-    final checkInService = context.read<CheckInService>();
-    checkInService.addListener(() {
-      if (checkInService.expired && mounted) {
-        checkInService.acknowledgeExpiry();
-        checkInService.stop();
-        _sendAutoSos(
-          '⏱ CHECK-IN TIMER EXPIRED — user may need help. AUTO SOS.',
-        );
-        showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            backgroundColor: Colors.red.shade900,
-            title: const Text('⏱ Check-In Missed',
-                style: TextStyle(color: Colors.white)),
-            content: const Text(
-              'Your safety check-in timer expired.\nAn SOS was broadcast automatically.',
-              style: TextStyle(color: Colors.white70),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child:
-                    const Text('OK', style: TextStyle(color: Colors.white)),
-              ),
-            ],
-          ),
-        );
-      }
-    });
-  }
-
-  Future<void> _sendAutoSos(String text) async {
-    final profile = context.read<ProfileService>();
-    double? lat, lng;
-    try {
-      final pos = await Geolocator.getLastKnownPosition();
-      lat = pos?.latitude;
-      lng = pos?.longitude;
-    } catch (_) {}
-    if (!mounted) return;
-
-    final name = profile.name.isNotEmpty ? profile.name : 'Unknown';
-    final message = EmergencyMessage(
-      id: const Uuid().v4(),
-      senderId: name,
-      senderName: name,
-      message:
-          '$text\nBlood: ${profile.bloodGroup} | Allergies: ${profile.allergies}',
-      type: EmergencyType.rescue,
-      priority: PriorityLevel.critical,
-      latitude: lat,
-      longitude: lng,
-      timestamp: DateTime.now(),
-    );
-    await context.read<MeshService>().broadcastMessage(message);
   }
 
   Future<void> _sendImSafe() async {
@@ -191,7 +121,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final mesh = context.watch<MeshService>();
     final location = context.watch<LocationService>();
-    final checkIn = context.watch<CheckInService>();
 
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
@@ -209,15 +138,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.qr_code,
-                color: AppColors.textSecondary, size: 26),
-            tooltip: 'My Emergency QR',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const QrProfileScreen()),
-            ),
-          ),
           IconButton(
             icon: const Icon(Icons.account_circle,
                 color: AppColors.textSecondary, size: 28),
@@ -342,100 +262,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 context,
                 MaterialPageRoute(
                     builder: (_) => const EmergencyContactsScreen()),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _ActionButton(
-              icon: Icons.medical_services,
-              label: 'First Aid Guide',
-              subtitle: 'CPR, snake bite, burns — 100% offline',
-              color: AppColors.emergencyRed,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const FirstAidScreen()),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _ActionButton(
-              icon: Icons.timer,
-              label: 'Safety Check-In Timer',
-              subtitle: checkIn.isActive
-                  ? '⏱ Active — check in before time runs out'
-                  : 'Auto-SOS if you go silent',
-              color: checkIn.isActive
-                  ? AppColors.connectedGreen
-                  : AppColors.primaryOrange,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const CheckInScreen()),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _ActionButton(
-              icon: Icons.qr_code,
-              label: 'My Emergency QR',
-              subtitle: 'Medical profile for paramedics — works offline',
-              color: AppColors.connectedGreen,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const QrProfileScreen()),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _ActionButton(
-              icon: Icons.directions_run,
-              label: 'Evacuation Navigator',
-              subtitle: 'Route to nearest safe zone — offline',
-              color: AppColors.connectedGreen,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const EvacuationScreen()),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _ActionButton(
-              icon: Icons.warning_amber,
-              label: 'Hazard Map',
-              subtitle: 'Report & see local hazards — shared via mesh',
-              color: AppColors.primaryOrange,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const HazardMapScreen()),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _ActionButton(
-              icon: Icons.person_search,
-              label: 'Missing Person',
-              subtitle: 'Broadcast alerts over the mesh',
-              color: AppColors.primaryOrange,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const MissingPersonScreen()),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _ActionButton(
-              icon: Icons.phone_in_talk,
-              label: 'Fake Call',
-              subtitle: 'Escape unsafe situations discreetly',
-              color: AppColors.accentBlue,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const FakeCallScreen()),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _ActionButton(
-              icon: Icons.route,
-              label: 'Location Trail',
-              subtitle: 'Last 24h of locations saved on device',
-              color: AppColors.accentBlue,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const LocationTrailScreen()),
               ),
             ),
             const SizedBox(height: 12),
