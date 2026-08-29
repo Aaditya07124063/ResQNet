@@ -8,11 +8,15 @@ class CrashDetectionService extends ChangeNotifier {
   // 40 m/s² ≈ 4g — typical vehicle crash threshold
   static const double _crashThreshold = 40.0;
   static const double _stillnessThreshold = 12.0;
+  // Must stay still for this long after impact — a single low sample can
+  // occur mid-shake by chance, but sustained stillness can't.
+  static const Duration _requiredStillness = Duration(milliseconds: 400);
 
   StreamSubscription<AccelerometerEvent>? _accelSub;
   bool _isActive = false;
   bool _crashDetected = false;
   DateTime? _highGTimestamp;
+  DateTime? _stillSince;
   double _speedAtImpact = 0.0;
 
   bool get isActive => _isActive;
@@ -39,6 +43,7 @@ class CrashDetectionService extends ChangeNotifier {
   void resetCrash() {
     _crashDetected = false;
     _highGTimestamp = null;
+    _stillSince = null;
     notifyListeners();
   }
 
@@ -51,16 +56,30 @@ class CrashDetectionService extends ChangeNotifier {
 
     if (magnitude > _crashThreshold && _highGTimestamp == null) {
       _highGTimestamp = DateTime.now();
+      _stillSince = null;
       _captureSpeed();
-    } else if (_highGTimestamp != null) {
-      final elapsed = DateTime.now().difference(_highGTimestamp!);
+      return;
+    }
 
-      if (magnitude < _stillnessThreshold && elapsed.inMilliseconds < 3000) {
+    if (_highGTimestamp == null) return;
+
+    final elapsed = DateTime.now().difference(_highGTimestamp!);
+    if (elapsed.inSeconds > 5) {
+      _highGTimestamp = null;
+      _stillSince = null;
+      return;
+    }
+
+    if (magnitude < _stillnessThreshold) {
+      _stillSince ??= DateTime.now();
+      if (DateTime.now().difference(_stillSince!) >= _requiredStillness) {
         _crashDetected = true;
         notifyListeners();
-      } else if (elapsed.inSeconds > 5) {
-        _highGTimestamp = null;
       }
+    } else {
+      // Still moving above the stillness threshold — e.g. continued
+      // shaking — so the "settled after impact" pattern hasn't happened.
+      _stillSince = null;
     }
   }
 

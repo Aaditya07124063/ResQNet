@@ -530,57 +530,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ],
                               ),
                             ),
-                            Wrap(
-                              spacing: 10,
-                              runSpacing: 10,
-                              children: ThemeService.availableThemes.entries
-                                  .map((entry) {
-                                final isSelected =
-                                    themeService.primaryColor == entry.value;
-                                return GestureDetector(
-                                  onTap: () =>
-                                      themeService.setColor(entry.value),
-                                  child: Column(
-                                    children: [
-                                      Container(
-                                        width: 44,
-                                        height: 44,
-                                        decoration: BoxDecoration(
-                                          color: entry.value,
-                                          shape: BoxShape.circle,
-                                          border: isSelected
-                                              ? Border.all(
-                                                  color: Colors.white,
-                                                  width: 3)
-                                              : Border.all(
-                                                  color: Colors.transparent,
-                                                  width: 3),
-                                          boxShadow: isSelected
-                                              ? [
-                                                  BoxShadow(
-                                                      color: entry.value
-                                                          .withOpacity(0.6),
-                                                      blurRadius: 8)
-                                                ]
-                                              : [],
-                                        ),
-                                        child: isSelected
-                                            ? const Icon(Icons.check,
-                                                color: Colors.white, size: 20)
-                                            : null,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        entry.key.split(' ').first,
-                                        style: const TextStyle(
-                                            color: AppColors.textSecondary,
-                                            fontSize: 10),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }).toList(),
-                            ),
                           ],
                         );
                       },

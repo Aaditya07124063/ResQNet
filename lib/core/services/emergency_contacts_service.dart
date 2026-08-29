@@ -123,7 +123,7 @@ class EmergencyContactsService extends ChangeNotifier {
 
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.low,
-      );
+      ).timeout(const Duration(seconds: 8));
 
       final countryCode = _detectCountryFromCoords(
         position.latitude,

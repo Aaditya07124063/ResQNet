@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -83,7 +84,7 @@ class ResQNetApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeService = context.watch<ThemeService>();
-    final primary = themeService.primaryColor;
+    const primary = ThemeService.primaryColor;
 
     return MaterialApp(
       title: 'ResQNet',
@@ -127,7 +128,7 @@ class _AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primary = context.watch<ThemeService>().primaryColor;
+    const primary = ThemeService.primaryColor;
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       initialData: FirebaseAuth.instance.currentUser,
@@ -140,6 +141,9 @@ class _AuthGate extends StatelessWidget {
           );
         }
         if (snapshot.hasData && snapshot.data != null) {
+          return const HomeScreen();
+        }
+        if (kDebugMode) {
           return const HomeScreen();
         }
         return const LoginScreen();

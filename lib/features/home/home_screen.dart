@@ -7,6 +7,8 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_routes.dart';
 import '../../core/models/emergency_message.dart';
 import '../../core/services/crash_detection_service.dart';
+import '../../core/services/hazard_service.dart';
+import '../../core/services/map_cache_service.dart';
 import '../../core/services/mesh_service.dart';
 import '../../core/services/location_service.dart';
 import '../../core/services/notification_service.dart';
@@ -44,10 +46,23 @@ class _HomeScreenState extends State<HomeScreen> {
       (e) => debugPrint('Notification init error: $e'),
     );
     if (!mounted) return;
-    context.read<LocationService>().getCurrentLocation();
-    context.read<MeshService>().startMeshNetwork().catchError(
+    context.read<LocationService>().getCurrentLocation().then((pos) {
+      // Silently keep the local map cached so it still works if the
+      // user loses connectivity before they think to download it.
+      if (pos != null) MapCacheService.autoCacheNearbyArea(pos);
+    });
+    final meshService = context.read<MeshService>();
+    meshService.startMeshNetwork().catchError(
       (e) => debugPrint('Mesh start error: $e'),
     );
+
+    final hazardService = context.read<HazardService>();
+    hazardService.load();
+    // Absorb any flood/fire/etc. hazards (peer-reported or relayed from
+    // an official feed) that arrive over the mesh, offline or online.
+    meshService.addListener(() {
+      hazardService.syncFromMesh(meshService.messages);
+    });
 
     // Vehicle crash detection
     final crashService = context.read<CrashDetectionService>();

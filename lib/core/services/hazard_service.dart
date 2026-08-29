@@ -155,6 +155,27 @@ class HazardService extends ChangeNotifier {
     );
   }
 
+  /// Absorb a hazard from an external/authoritative source — e.g. a future
+  /// government disaster-alert feed — and return the mesh message to
+  /// broadcast, so the alert also reaches nearby devices with no internet.
+  EmergencyMessage ingestExternal(Hazard hazard) {
+    _hazards[hazard.id] = hazard;
+    notifyListeners();
+    _persist();
+
+    return EmergencyMessage(
+      id: hazard.id,
+      senderId: 'official',
+      senderName: hazard.reporter,
+      message: '$hazardPrefix${jsonEncode(hazard.toJson())}',
+      type: EmergencyType.general,
+      priority: PriorityLevel.high,
+      latitude: hazard.latitude,
+      longitude: hazard.longitude,
+      timestamp: hazard.timestamp,
+    );
+  }
+
   /// Scan mesh messages for hazard payloads and absorb any new ones.
   void syncFromMesh(List<EmergencyMessage> meshMessages) {
     bool added = false;

@@ -135,6 +135,7 @@ class _MeshScreenState extends State<MeshScreen>
   Widget build(BuildContext context) {
     final mesh = context.watch<MeshService>();
     final ai = context.watch<AiService>();
+    final profile = context.watch<ProfileService>();
 
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
@@ -178,16 +179,6 @@ class _MeshScreenState extends State<MeshScreen>
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
-          IconButton(
-            tooltip: _isAnonymous ? 'Anonymous: ON' : 'Anonymous: OFF',
-            icon: Icon(
-              _isAnonymous ? Icons.visibility_off : Icons.visibility,
-              color: _isAnonymous
-                  ? AppColors.emergencyRed
-                  : AppColors.textSecondary,
-            ),
-            onPressed: () => setState(() => _isAnonymous = !_isAnonymous),
-          ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.translate, color: AppColors.textPrimary),
             onSelected: (lang) => setState(() => _selectedLanguage = lang),
@@ -342,6 +333,44 @@ class _MeshScreenState extends State<MeshScreen>
                       borderRadius: BorderRadius.circular(24)),
                 ),
               ),
+            ),
+          ),
+
+          Container(
+            width: double.infinity,
+            color: AppColors.surfaceDark,
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Row(
+              children: [
+                Icon(
+                  _isAnonymous ? Icons.visibility_off : Icons.visibility,
+                  color: _isAnonymous
+                      ? AppColors.emergencyRed
+                      : AppColors.connectedGreen,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _isAnonymous
+                        ? 'Sending anonymously'
+                        : 'Sending as ${profile.name.isNotEmpty ? profile.name : 'yourself'}',
+                    style: TextStyle(
+                      color: _isAnonymous
+                          ? AppColors.emergencyRed
+                          : AppColors.textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Switch(
+                  value: _isAnonymous,
+                  activeThumbColor: AppColors.emergencyRed,
+                  onChanged: (v) => setState(() => _isAnonymous = v),
+                ),
+              ],
             ),
           ),
 

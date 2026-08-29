@@ -25,12 +25,18 @@ class LocationService extends ChangeNotifier {
     try {
       _currentPosition = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
-      );
+      ).timeout(const Duration(seconds: 8));
       notifyListeners();
       return _currentPosition;
     } catch (e) {
-      debugPrint('Location error: $e');
-      return null;
+      debugPrint('Location error: $e, falling back to last known position');
+      try {
+        _currentPosition = await Geolocator.getLastKnownPosition();
+        notifyListeners();
+        return _currentPosition;
+      } catch (_) {
+        return null;
+      }
     }
   }
 

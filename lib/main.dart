@@ -6,6 +6,8 @@ import 'app.dart';
 import 'core/services/ai_service.dart';
 import 'core/services/crash_detection_service.dart';
 import 'core/services/emergency_contacts_service.dart';
+import 'core/services/government_alert_feed_service.dart';
+import 'core/services/hazard_service.dart';
 import 'core/services/location_service.dart';
 import 'core/services/mesh_service.dart';
 import 'core/services/notification_service.dart';
@@ -26,6 +28,14 @@ void main() async {
 
   final aiService = AiService();
   final locationService = LocationService();
+  final meshService = MeshService();
+  final hazardService = HazardService();
+
+  // Future government/authority disaster-alert integration point: set
+  // GovernmentAlertFeedService.feedUrl and this starts polling it, turning
+  // each alert into a Hazard that also relays over the offline mesh.
+  // No-ops until a feed URL is configured — see the file for details.
+  GovernmentAlertFeedService(hazardService, meshService).start();
 
   runApp(
     MultiProvider(
@@ -36,7 +46,8 @@ void main() async {
         ChangeNotifierProvider(
           create: (_) => SosService(aiService, locationService),
         ),
-        ChangeNotifierProvider(create: (_) => MeshService()),
+        ChangeNotifierProvider.value(value: meshService),
+        ChangeNotifierProvider.value(value: hazardService),
         ChangeNotifierProvider(create: (_) => NotificationService()),
         ChangeNotifierProvider(create: (_) => ThemeService()),
         ChangeNotifierProvider(create: (_) => ProfileService()),
