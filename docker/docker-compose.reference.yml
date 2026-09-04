@@ -1,0 +1,69 @@
+# ResQNet — reference production compose file.
+#
+# This is a REFERENCE copy checked into the repo for documentation/review.
+# The file actually running on the VPS is host-owned, at
+# /opt/resqnet/docker/docker-compose.prod.yml — copy this there and treat
+# that copy as the source of truth once it diverges (e.g. real resource
+# limits tuned from observed usage).
+#
+# Isolation from Orbyatravel (or any other project on this shared VPS):
+# every name below is resqnet-prefixed, the network is private to this
+# compose file, and neither service publishes a port Orbyatravel (or the
+# public internet) could reach except the api service's single
+# loopback-bound port.
+#
+# Real secrets live only in .env.prod next to this file (chmod 600,
+# never committed) — see docker/.env.prod.example for the variables it
+# must define.
+
+services:
+  api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: resqnet-api
+    restart: unless-stopped
+    mem_limit: 768m
+    ports:
+      # Loopback-only. For early VPS-IP testing (no nginx/domain yet —
+      # see docs/AUDIT.md), this is deliberately widened to 0.0.0.0 by
+      # the operator at deploy time (not by editing this file — see the
+      # deployment guide) and narrowed back to 127.0.0.1 once nginx is in
+      # front of it.
+      - "127.0.0.1:${RESQNET_API_PORT:-3300}:3000"
+    env_file:
+      - .env.prod
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - resqnet_internal
+
+  db:
+    image: postgres:16-alpine
+    container_name: resqnet-db
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # No `ports:` — intentionally not published to the host at all.
+    # Only resqnet-api, on the same private network, can reach it.
+    volumes:
+      - resqnet_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - resqnet_internal
+
+networks:
+  resqnet_internal:
+    name: resqnet_network
+
+volumes:
+  resqnet_db_data:
+    name: resqnet_db_data

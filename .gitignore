@@ -5,6 +5,7 @@
 .env.*
 !.env.example
 !backend/.env.example
+!docker/.env.prod.example
 secrets/
 *.pem
 *.key
