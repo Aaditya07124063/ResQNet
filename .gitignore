@@ -1,3 +1,16 @@
+# Secrets — never commit real environment/credential files at the repo root
+# (backend/.gitignore covers backend/ separately; this is a defense-in-depth
+# backstop for anything created outside it).
+.env
+.env.*
+!.env.example
+!backend/.env.example
+secrets/
+*.pem
+*.key
+*.jks
+*.keystore
+
 # Miscellaneous
 *.class
 *.log
