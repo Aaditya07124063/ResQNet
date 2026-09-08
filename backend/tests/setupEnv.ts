@@ -15,3 +15,10 @@ process.env.EMPLOYEE_JWT_REFRESH_SECRET =
   process.env.EMPLOYEE_JWT_REFRESH_SECRET ?? 'test-employee-refresh-secret-needs-32-chars-min';
 process.env.MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY ?? 'test_minio_access_key';
 process.env.MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY ?? 'test_minio_secret_key';
+// 32 raw bytes, base64-encoded — a valid-shaped (but obviously not
+// production-secret) AES-256-GCM key so credentialEncryption.ts/smsService
+// tests exercise the real encrypt/decrypt path by default; individual
+// tests that need to exercise the "key missing" failure mode delete
+// env.PROVIDER_CREDENTIALS_ENCRYPTION_KEY themselves and restore it after.
+process.env.PROVIDER_CREDENTIALS_ENCRYPTION_KEY =
+  process.env.PROVIDER_CREDENTIALS_ENCRYPTION_KEY ?? Buffer.alloc(32, 7).toString('base64');

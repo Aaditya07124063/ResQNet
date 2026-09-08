@@ -110,6 +110,47 @@ export const authRateLimiter = rateLimit({
   handler: (_req, _res, next) => next(HttpError.tooManyRequests('Too many authentication attempts')),
 });
 
+// Phone-OTP auth (Step 2 of the Firebase migration). send-otp is
+// double-keyed — IP AND normalized phone number, per spec — so neither an
+// attacker hammering many numbers from one IP nor one hammering a single
+// victim number from many IPs/devices escapes both limiters. Both run
+// AFTER validateBody(sendOtpSchema) in the route (see authRoutes.ts), so
+// req.body.phoneNumber is already E.164-normalized by the time the
+// phone-keyed limiter reads it — normalizing first is what makes this
+// immune to formatting-variant bypass (spaces/dashes/leading-00 etc. all
+// collapse to the same key).
+export const otpSendIpRateLimiter = rateLimit({
+  windowMs: env.OTP_SEND_RATE_LIMIT_WINDOW_MS,
+  max: env.OTP_SEND_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip ?? 'unknown',
+  handler: (_req, _res, next) => next(HttpError.tooManyRequests('Too many OTP requests — please wait before retrying')),
+});
+
+export const otpSendPhoneRateLimiter = rateLimit({
+  windowMs: env.OTP_SEND_PHONE_RATE_LIMIT_WINDOW_MS,
+  max: env.OTP_SEND_PHONE_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.body as { phoneNumber?: string })?.phoneNumber ?? 'unknown',
+  handler: (_req, _res, next) =>
+    next(HttpError.tooManyRequests('Too many OTP requests for this phone number — please wait before retrying')),
+});
+
+// verify-otp is IP-keyed only — brute force against one specific OTP
+// record is already bounded by verification_attempts.max_attempts,
+// enforced transactionally in verificationService.ts, so a phone-keyed
+// limiter here would duplicate that control rather than add coverage.
+export const otpVerifyRateLimiter = rateLimit({
+  windowMs: env.OTP_VERIFY_RATE_LIMIT_WINDOW_MS,
+  max: env.OTP_VERIFY_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip ?? 'unknown',
+  handler: (_req, _res, next) => next(HttpError.tooManyRequests('Too many verification attempts — please wait before retrying')),
+});
+
 // Stricter limiter for the employee-portal login endpoint specifically
 // (Phase 15): a password-based login is a classic credential-stuffing/
 // brute-force target, and employee accounts are the highest-privilege

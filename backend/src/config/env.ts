@@ -41,6 +41,15 @@ const envSchema = z.object({
   EMPLOYEE_JWT_ACCESS_TTL_MINUTES: z.coerce.number().int().positive().default(15),
   EMPLOYEE_JWT_REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(30),
 
+  // AES-256-GCM key (32 raw bytes, base64-encoded) for
+  // email_providers/sms_providers.encrypted_credentials — see
+  // utils/credentialEncryption.ts. Optional at the env-schema level (same
+  // graceful-degradation reasoning as FIREBASE_SERVICE_ACCOUNT_JSON/
+  // SEISMIC_WEBHOOK_SECRET below: a missing value must not crash app boot
+  // in an environment that never touches SMS/email sending, e.g. most
+  // tests) — but credentialEncryption.ts itself throws loudly the moment
+  // encrypt/decrypt is actually attempted without it. Never logged — see
+  // utils/logger.ts redaction.
   PROVIDER_CREDENTIALS_ENCRYPTION_KEY: z.string().optional(),
 
   // Phase 17: Firebase Admin SDK service-account credentials, used ONLY to
@@ -83,6 +92,22 @@ const envSchema = z.object({
   REPORT_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
   EMPLOYEE_AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   EMPLOYEE_AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+
+  // Phone-OTP auth (Step 2 of the Firebase migration). Two independent
+  // limiters per endpoint — IP-keyed (guards a single attacker hammering
+  // many numbers) and, for send-otp only, phone-keyed (guards many
+  // attackers/devices hammering one victim number) — matching the spec's
+  // explicit "rate-limit BOTH IP address and normalized phone number"
+  // requirement. verify-otp has no phone-keyed limiter: brute-force against
+  // one OTP record is already bounded by verification_attempts.max_attempts
+  // (checked/incremented transactionally in verificationService.ts), so a
+  // second phone-keyed limiter there would only duplicate that control.
+  OTP_SEND_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900_000),
+  OTP_SEND_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(3),
+  OTP_SEND_PHONE_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900_000),
+  OTP_SEND_PHONE_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(3),
+  OTP_VERIFY_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900_000),
+  OTP_VERIFY_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
 
   // Communication phase (chat): message sending is much higher-frequency
   // than SOS/reports by nature, so it gets its own, more generous budget
