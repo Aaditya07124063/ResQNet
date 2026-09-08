@@ -100,7 +100,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         Expanded(
           child: sorted.isEmpty
-              ? const Center(
+              ? Center(
                   child: Text('No emergencies received yet.',
                       style: TextStyle(color: AppColors.textSecondary)))
               : ListView.builder(
@@ -151,11 +151,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Expanded(
                 child: TextField(
                   controller: _messageController,
-                  style: const TextStyle(color: AppColors.textPrimary),
+                  style: TextStyle(color: AppColors.textPrimary),
                   decoration: InputDecoration(
                     hintText: 'Type emergency message...',
                     hintStyle:
-                        const TextStyle(color: AppColors.textSecondary),
+                        TextStyle(color: AppColors.textSecondary),
                     filled: true,
                     fillColor: AppColors.cardDark,
                     border: OutlineInputBorder(
@@ -200,7 +200,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     fontSize: 28,
                     fontWeight: FontWeight.bold)),
             Text(label,
-                style: const TextStyle(
+                style: TextStyle(
                     color: AppColors.textSecondary, fontSize: 12)),
           ]),
         ),

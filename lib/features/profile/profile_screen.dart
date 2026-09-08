@@ -1,12 +1,14 @@
 import 'dart:io';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/data/locations.dart';
+import '../../core/network/api_client.dart';
 import '../../core/services/crash_detection_service.dart';
+import '../../core/services/profile_service.dart';
 import '../../core/services/seismic_service.dart';
+import '../../core/services/sensor_recorder_service.dart';
 import '../../core/services/theme_service.dart';
 import '../../features/auth/auth_service.dart';
 
@@ -28,6 +30,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _medicationsController = TextEditingController();
 
   String _bloodGroup = 'A+';
+  String? _country;
+  String? _state;
+  String? _city;
   bool _loading = true;
   bool _saving = false;
   String? _photoUrl;
@@ -56,38 +61,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadProfile() async {
-    final auth = context.read<AuthService>();
-    final uid = auth.currentUser?.uid;
-    if (uid == null) {
-      if (mounted) setState(() => _loading = false);
-      return;
+    final profile = context.read<ProfileService>();
+
+    // Cache first — instant, and works with zero internet, and doesn't
+    // depend on being logged in (this used to require a Firebase uid
+    // before even trying the cache, so Profile went blank offline or
+    // whenever the auth session hadn't restored yet).
+    await profile.loadFromCache();
+    if (mounted) {
+      _applyToControllers(profile);
+      setState(() => _loading = false);
     }
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('user_profiles')
-          .doc(uid)
-          .get()
-          .timeout(const Duration(seconds: 8));
-      if (doc.exists && mounted) {
-        final data = doc.data()!;
-        _nameController.text = data['name'] ?? '';
-        _fatherNameController.text = data['fatherName'] ?? '';
-        _ageController.text = data['age'] ?? '';
-        _addressController.text = data['address'] ?? '';
-        _emergencyContactController.text = data['emergencyContact'] ?? '';
-        _allergiesController.text = data['allergies'] ?? '';
-        _medicationsController.text = data['medications'] ?? '';
-        setState(() {
-          _bloodGroup = data['bloodGroup'] ?? 'A+';
-          _photoUrl = data['photoUrl'];
-        });
-      }
-    } catch (e) {
-      debugPrint('Profile load error: $e');
-    }
-    if (mounted) setState(() => _loading = false);
+
+    // Then a best-effort refresh from the cloud, in case another device
+    // changed something — silently keeps the cached values if offline.
+    await profile.syncFromCloud();
+    if (mounted) _applyToControllers(profile);
   }
 
+  void _applyToControllers(ProfileService profile) {
+    _nameController.text = profile.name;
+    _fatherNameController.text = profile.fatherName;
+    _ageController.text = profile.age;
+    _addressController.text = profile.address;
+    _emergencyContactController.text = profile.emergencyContact;
+    _allergiesController.text = profile.allergies;
+    _medicationsController.text = profile.medications;
+    setState(() {
+      _bloodGroup = profile.bloodGroup.isNotEmpty ? profile.bloodGroup : 'A+';
+      _photoUrl = profile.photoUrl.isNotEmpty ? profile.photoUrl : null;
+      // Only keep a saved value if it's still valid for the current
+      // dropdown options — avoids crashing on stale/free-text data.
+      _country =
+          Locations.countries.contains(profile.country) ? profile.country : null;
+      _state = Locations.statesFor(_country).contains(profile.state)
+          ? profile.state
+          : null;
+      _city = Locations.citiesFor(_state).contains(profile.city)
+          ? profile.city
+          : null;
+    });
+  }
+
+  /// Phase 20: uploads to the ResQNet backend's MinIO-backed storage
+  /// (`PUT /api/v1/profile/image`, Phase 6) instead of Firebase Storage.
+  /// Requires a backend session (Google or, once Phase 8/9 exists, phone)
+  /// — gated on that rather than a Firebase uid, since a backend-Google-
+  /// authenticated user has no Firebase session at all (see
+  /// docs/DONE.md's Phase 20 entry).
   Future<void> _pickAndUploadPhoto() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(
@@ -99,24 +120,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (picked == null) return;
 
     final auth = context.read<AuthService>();
-    final uid = auth.currentUser?.uid;
-    if (uid == null) return;
+    if (!await auth.isBackendSignedIn()) return;
 
     setState(() => _uploadingPhoto = true);
 
     try {
-      final file = File(picked.path);
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('profile_pictures')
-          .child('$uid.jpg');
-      await ref.putFile(file);
-      final url = await ref.getDownloadURL();
-      await FirebaseFirestore.instance
-          .collection('user_profiles')
-          .doc(uid)
-          .set({'photoUrl': url}, SetOptions(merge: true));
-      if (mounted) setState(() => _photoUrl = url);
+      final bytes = await File(picked.path).readAsBytes();
+      await ApiClient.instance.putBytes(
+        '/profile/image',
+        bytes: bytes,
+        contentType: 'image/jpeg',
+        auth: true,
+      );
+      if (!mounted) return;
+      final profile = context.read<ProfileService>();
+      // The backend never returns a permanent URL (the object is private,
+      // visibility-gated) — fetch a fresh signed one to display now.
+      await profile.refreshPhotoUrl();
+      if (mounted) setState(() => _photoUrl = profile.photoUrl);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Profile picture updated!'),
@@ -142,25 +163,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _saving = true);
 
     final auth = context.read<AuthService>();
-    final uid = auth.currentUser?.uid;
-    if (uid == null) {
-      setState(() => _saving = false);
-      return;
-    }
+    // No early return on a missing uid — that would skip the local cache
+    // save too (this used to write straight to Firestore only, so an
+    // unauthenticated/not-yet-restored session silently saved nothing at
+    // all, online or offline). ProfileService.saveProfile() always caches
+    // locally and only skips its own Firestore push when there's no uid.
 
     final data = {
       'name': _nameController.text.trim(),
       'fatherName': _fatherNameController.text.trim(),
       'age': _ageController.text.trim(),
       'bloodGroup': _bloodGroup,
+      'country': _country ?? '',
+      'state': _state ?? '',
+      'city': _city ?? '',
       'address': _addressController.text.trim(),
       'emergencyContact': _emergencyContactController.text.trim(),
       'allergies': _allergiesController.text.trim(),
       'medications': _medicationsController.text.trim(),
+      'photoUrl': _photoUrl ?? '',
       'phone': auth.currentUser?.phoneNumber ?? '',
       'email': auth.currentUser?.email ?? '',
       'updatedAt': DateTime.now().toIso8601String(),
     };
+
+    // Saves to the local cache immediately (so it's there next time even
+    // with zero internet) and pushes to Firestore in the background.
+    await context.read<ProfileService>().saveProfile(data);
 
     setState(() => _saving = false);
     if (mounted) {
@@ -170,12 +199,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         duration: Duration(seconds: 2),
       ));
     }
-
-    FirebaseFirestore.instance
-        .collection('user_profiles')
-        .doc(uid)
-        .set(data, SetOptions(merge: true))
-        .catchError((e) => debugPrint('Profile sync error: $e'));
   }
 
   Future<void> _logout() async {
@@ -183,14 +206,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppColors.surfaceDark,
-        title: const Text('Logout',
+        title: Text('Logout',
             style: TextStyle(color: AppColors.textPrimary)),
-        content: const Text('Are you sure you want to logout?',
+        content: Text('Are you sure you want to logout?',
             style: TextStyle(color: AppColors.textSecondary)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel',
+            child: Text('Cancel',
                 style: TextStyle(color: AppColors.textSecondary)),
           ),
           TextButton(
@@ -214,12 +237,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       backgroundColor: AppColors.backgroundDark,
       appBar: AppBar(
         backgroundColor: AppColors.surfaceDark,
-        title: const Text('My Profile',
+        title: Text('My Profile',
             style: TextStyle(
                 color: AppColors.textPrimary,
                 fontWeight: FontWeight.bold)),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
@@ -298,7 +321,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ),
                           ),
                           const SizedBox(height: 6),
-                          const Text('Tap to change photo',
+                          Text('Tap to change photo',
                               style: TextStyle(
                                   color: AppColors.textSecondary,
                                   fontSize: 12)),
@@ -307,7 +330,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             auth.currentUser?.phoneNumber ??
                                 auth.currentUser?.email ??
                                 'No contact info',
-                            style: const TextStyle(
+                            style: TextStyle(
                                 color: AppColors.textSecondary,
                                 fontSize: 14),
                           ),
@@ -326,6 +349,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         keyboardType: TextInputType.number),
                     _buildField('Address (Optional)', _addressController,
                         icon: Icons.home, maxLines: 2),
+                    _buildDropdown<String>(
+                      label: 'Country',
+                      icon: Icons.public,
+                      value: _country,
+                      items: Locations.countries,
+                      onChanged: (v) => setState(() {
+                        _country = v;
+                        _state = null;
+                        _city = null;
+                      }),
+                    ),
+                    _buildDropdown<String>(
+                      label: 'State',
+                      icon: Icons.map,
+                      value: _state,
+                      items: Locations.statesFor(_country),
+                      hint: _country == null ? 'Select country first' : 'Select state',
+                      onChanged: _country == null
+                          ? null
+                          : (v) => setState(() {
+                                _state = v;
+                                _city = null;
+                              }),
+                    ),
+                    _buildDropdown<String>(
+                      label: 'City / Town',
+                      icon: Icons.location_city,
+                      value: _city,
+                      items: Locations.citiesFor(_state),
+                      hint: _state == null ? 'Select state first' : 'Select city/town',
+                      onChanged:
+                          _state == null ? null : (v) => setState(() => _city = v),
+                    ),
                     const SizedBox(height: 16),
                     _sectionTitle('Medical Information'),
                     Container(
@@ -341,7 +397,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           const Icon(Icons.bloodtype,
                               color: AppColors.emergencyRed, size: 20),
                           const SizedBox(width: 12),
-                          const Text('Blood Group',
+                          Text('Blood Group',
                               style: TextStyle(
                                   color: AppColors.textSecondary,
                                   fontSize: 13)),
@@ -349,7 +405,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           DropdownButton<String>(
                             value: _bloodGroup,
                             dropdownColor: AppColors.cardDark,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 color: AppColors.textPrimary,
                                 fontWeight: FontWeight.bold),
                             underline: const SizedBox(),
@@ -405,7 +461,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       : AppColors.textSecondary,
                                   size: 20),
                               const SizedBox(width: 12),
-                              const Expanded(
+                              Expanded(
                                 child: Column(
                                   crossAxisAlignment:
                                       CrossAxisAlignment.start,
@@ -457,7 +513,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       CrossAxisAlignment.start,
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    const Text('Earthquake Detection',
+                                    Text('Earthquake Detection',
                                         style: TextStyle(
                                             color: AppColors.textPrimary,
                                             fontSize: 13)),
@@ -467,7 +523,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                               ? 'Monitoring — phone is still'
                                               : 'Active — waiting for phone to rest')
                                           : 'Detects tremors when phone is resting',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                           color: AppColors.textSecondary,
                                           fontSize: 11),
                                     ),
@@ -516,7 +572,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     themeService.isDarkMode
                                         ? 'Dark Mode'
                                         : 'Light Mode',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                         color: AppColors.textSecondary,
                                         fontSize: 13),
                                   ),
@@ -534,7 +590,91 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         );
                       },
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 16),
+                    _sectionTitle('Developer / Data Collection'),
+                    Consumer<SensorRecorderService>(
+                      builder: (context, recorder, _) {
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: AppColors.cardDark,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.fiber_manual_record,
+                                      color: recorder.isRecording
+                                          ? AppColors.emergencyRed
+                                          : AppColors.textSecondary,
+                                      size: 14),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      recorder.isRecording
+                                          ? 'Recording — ${recorder.bufferedSampleCount} samples captured'
+                                          : 'Records raw accelerometer/gyro/GPS data for detector testing and replay.',
+                                      style: TextStyle(
+                                          color: AppColors.textSecondary,
+                                          fontSize: 12),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: () async {
+                                    if (recorder.isRecording) {
+                                      final session =
+                                          await recorder.stopRecording();
+                                      if (context.mounted && session != null) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(SnackBar(
+                                          content: Text(
+                                              'Saved session with ${session.samples.length} samples'),
+                                        ));
+                                      }
+                                    } else {
+                                      await recorder.startRecording();
+                                    }
+                                  },
+                                  icon: Icon(recorder.isRecording
+                                      ? Icons.stop
+                                      : Icons.fiber_manual_record),
+                                  label: Text(recorder.isRecording
+                                      ? 'Stop Recording'
+                                      : 'Start Recording'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: recorder.isRecording
+                                        ? AppColors.emergencyRed
+                                        : AppColors.connectedGreen,
+                                    side: BorderSide(
+                                        color: recorder.isRecording
+                                            ? AppColors.emergencyRed
+                                            : AppColors.connectedGreen),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              TextButton(
+                                onPressed: () =>
+                                    _showSessionListDialog(context, recorder),
+                                child: Text('View saved sessions',
+                                    style: TextStyle(
+                                        color: AppColors.accentBlue)),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
                       height: 52,
@@ -569,11 +709,98 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Future<void> _shareSession(
+      BuildContext context, SensorRecorderService recorder, String sessionId,
+      {required bool asCsv}) async {
+    try {
+      await (asCsv
+          ? recorder.shareSessionCsv(sessionId)
+          : recorder.shareSessionJson(sessionId));
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Share failed: $e')));
+      }
+    }
+  }
+
+  Future<void> _showSessionListDialog(
+      BuildContext context, SensorRecorderService recorder) async {
+    final ids = await recorder.listSavedSessionIds();
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.surfaceDark,
+        title: Text('Recorded Sessions',
+            style: TextStyle(color: AppColors.textPrimary)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ids.isEmpty
+              ? Text('No sessions recorded yet.',
+                  style: TextStyle(color: AppColors.textSecondary))
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: ids.length,
+                  itemBuilder: (_, i) {
+                    final id = ids[i];
+                    return ListTile(
+                      title: Text(id,
+                          style: TextStyle(
+                              color: AppColors.textPrimary, fontSize: 12),
+                          overflow: TextOverflow.ellipsis),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: Icon(Icons.ios_share,
+                                color: AppColors.accentBlue, size: 20),
+                            tooltip: 'Share CSV',
+                            onPressed: () => _shareSession(
+                                dialogContext, recorder, id,
+                                asCsv: true),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.code,
+                                color: AppColors.accentBlue, size: 20),
+                            tooltip: 'Share JSON',
+                            onPressed: () => _shareSession(
+                                dialogContext, recorder, id,
+                                asCsv: false),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.delete_outline,
+                                color: AppColors.emergencyRed, size: 20),
+                            tooltip: 'Delete',
+                            onPressed: () async {
+                              await recorder.deleteSession(id);
+                              if (dialogContext.mounted) {
+                                Navigator.pop(dialogContext);
+                                _showSessionListDialog(context, recorder);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _sectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Text(title,
-          style: const TextStyle(
+          style: TextStyle(
               color: AppColors.textPrimary,
               fontWeight: FontWeight.bold,
               fontSize: 15)),
@@ -595,20 +822,66 @@ class _ProfileScreenState extends State<ProfileScreen> {
         controller: controller,
         maxLines: maxLines,
         keyboardType: keyboardType,
-        style: const TextStyle(color: AppColors.textPrimary),
+        style: TextStyle(color: AppColors.textPrimary),
         validator: required
             ? (v) => v == null || v.trim().isEmpty ? 'Required' : null
             : null,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
-          labelStyle: const TextStyle(
+          labelStyle: TextStyle(
               color: AppColors.textSecondary, fontSize: 13),
-          hintStyle: const TextStyle(
+          hintStyle: TextStyle(
               color: AppColors.textSecondary, fontSize: 12),
           prefixIcon: icon != null
               ? Icon(icon, color: AppColors.textSecondary, size: 20)
               : null,
+          filled: true,
+          fillColor: AppColors.cardDark,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(
+                color: AppColors.emergencyRed, width: 1.5),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDropdown<T>({
+    required String label,
+    required IconData icon,
+    required T? value,
+    required List<T> items,
+    required ValueChanged<T?>? onChanged,
+    String? hint,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: DropdownButtonFormField<T>(
+        initialValue: value,
+        items: items
+            .map((item) => DropdownMenuItem<T>(
+                  value: item,
+                  child: Text('$item',
+                      style: TextStyle(color: AppColors.textPrimary)),
+                ))
+            .toList(),
+        onChanged: onChanged,
+        dropdownColor: AppColors.cardDark,
+        style: TextStyle(color: AppColors.textPrimary),
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
+          labelStyle: TextStyle(
+              color: AppColors.textSecondary, fontSize: 13),
+          hintStyle: TextStyle(
+              color: AppColors.textSecondary, fontSize: 12),
+          prefixIcon: Icon(icon, color: AppColors.textSecondary, size: 20),
           filled: true,
           fillColor: AppColors.cardDark,
           border: OutlineInputBorder(

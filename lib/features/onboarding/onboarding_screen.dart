@@ -88,7 +88,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               alignment: Alignment.topRight,
               child: TextButton(
                 onPressed: _finish,
-                child: const Text('Skip',
+                child: Text('Skip',
                     style: TextStyle(
                         color: AppColors.textSecondary, fontSize: 14)),
               ),
@@ -181,7 +181,7 @@ class _PageContent extends StatelessWidget {
           Text(
             page.title,
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 24,
                 fontWeight: FontWeight.bold),
@@ -190,7 +190,7 @@ class _PageContent extends StatelessWidget {
           Text(
             page.description,
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 15,
                 height: 1.6),

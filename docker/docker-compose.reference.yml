@@ -18,9 +18,14 @@
 
 services:
   api:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
+    # Phase 18: deploys the exact image CI built and tested (backend-ci.yml),
+    # never rebuilt from source on the host — that's the point of CI/CD
+    # (the artifact that passed tests is the artifact that runs). Set
+    # RESQNET_API_IMAGE in .env.prod to the full GHCR reference + an
+    # immutable commit-SHA tag (never `:latest` — see .env.prod.example).
+    # A `build:` section is deliberately NOT restored here even for local
+    # testing — use `docker build backend/` directly if you need that.
+    image: ${RESQNET_API_IMAGE}
     container_name: resqnet-api
     restart: unless-stopped
     mem_limit: 768m
@@ -36,6 +41,39 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      minio:
+        condition: service_started
+    networks:
+      - resqnet_internal
+
+  minio:
+    # Phase 18: pinned per requirement #7 (no unnecessary `latest` on a
+    # production image) — this IS the current, verified tag, but it is
+    # also the LAST one that will ever exist: as of this phase,
+    # github.com/minio/minio is archived (read-only, "archived by the
+    # owner on Apr 25, 2026") and MinIO stopped publishing free
+    # pre-built Docker Hub images in October 2025. This tag fixes the
+    # final critical CVE (service-account/STS privilege escalation)
+    # MinIO shipped before archival — it is the right tag to pin to
+    # today, but it will receive no further security updates, ever.
+    # This is a real architectural gap Phase 18 surfaced but does NOT
+    # resolve (out of scope — "do not invent infrastructure"): before
+    # real production data lands in MinIO, a deliberate decision is
+    # needed (self-build from the archived source per MinIO's own final
+    # release notes, a maintained fork, or replacing MinIO with another
+    # S3-compatible provider). Flagged in docs/DONE.md's Phase 18 entry.
+    image: minio/minio:RELEASE.2025-10-15T17-29-55Z
+    container_name: resqnet-minio
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server /data
+    # No `ports:` — same private-by-default pattern as resqnet-db. Only
+    # resqnet-api, on the same private network, can reach it.
+    volumes:
+      - resqnet_minio_data:/data
     networks:
       - resqnet_internal
 
@@ -67,3 +105,5 @@ networks:
 volumes:
   resqnet_db_data:
     name: resqnet_db_data
+  resqnet_minio_data:
+    name: resqnet_minio_data

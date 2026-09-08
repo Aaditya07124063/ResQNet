@@ -31,7 +31,15 @@ export function createApp(): Express {
   app.use(
     pinoHttp({
       logger,
-      redact: ['req.headers.authorization'],
+      // pino-http's own `redact` option is separate from the `logger`
+      // instance's own redact config (utils/logger.ts) — it is NOT
+      // merged with it, so a header that must never reach the access
+      // log (e.g. the seismic webhook secret, Phase 21 closure) has to
+      // be listed here too, or it is logged in cleartext on every
+      // request regardless of logger.ts's own redact list. Confirmed by
+      // a live request during Phase 21 closure: logger.ts alone did not
+      // redact this header from the request-completed log line.
+      redact: ['req.headers.authorization', 'req.headers["x-seismic-webhook-secret"]'],
     }),
   );
 

@@ -94,8 +94,8 @@ class _OtpScreenState extends State<OtpScreen> {
     final defaultPinTheme = PinTheme(
       width: 52,
       height: 56,
-      textStyle: const TextStyle(
-          color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+      textStyle: TextStyle(
+          color: AppColors.textPrimary, fontSize: 22, fontWeight: FontWeight.bold),
       decoration: BoxDecoration(
         color: AppColors.cardDark,
         borderRadius: BorderRadius.circular(8),
@@ -107,7 +107,7 @@ class _OtpScreenState extends State<OtpScreen> {
       backgroundColor: AppColors.backgroundDark,
       appBar: AppBar(
         backgroundColor: AppColors.backgroundDark,
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: IconThemeData(color: AppColors.textPrimary),
       ),
       body: Padding(
         padding: const EdgeInsets.all(24),
@@ -115,7 +115,7 @@ class _OtpScreenState extends State<OtpScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 20),
-            const Text('Enter OTP',
+            Text('Enter OTP',
                 style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 28,
@@ -123,7 +123,7 @@ class _OtpScreenState extends State<OtpScreen> {
             const SizedBox(height: 8),
             Text(
               'OTP sent to ${widget.phoneNumber}',
-              style: const TextStyle(
+              style: TextStyle(
                   color: AppColors.textSecondary, fontSize: 14),
             ),
             const SizedBox(height: 40),
@@ -147,7 +147,7 @@ class _OtpScreenState extends State<OtpScreen> {
               child: _secondsLeft > 0
                   ? Text(
                       'Resend OTP in $_secondsLeft seconds',
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: AppColors.textSecondary, fontSize: 14),
                     )
                   : TextButton(

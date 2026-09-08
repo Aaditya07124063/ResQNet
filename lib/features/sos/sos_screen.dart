@@ -6,8 +6,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/models/sos_alert.dart';
 import '../../core/services/location_service.dart';
-import '../../core/services/mesh_service.dart';
-import '../../core/services/sos_service.dart';
+import '../../core/services/sos_dispatch_service.dart';
 import '../../features/auth/auth_service.dart';
 
 class SosScreen extends StatefulWidget {
@@ -82,11 +81,15 @@ class _SosScreenState extends State<SosScreen> {
     setState(() => _isSending = true);
 
     final auth = context.read<AuthService>();
-    final sos = context.read<SosService>();
-    final mesh = context.read<MeshService>();
 
     try {
-      final alert = await sos.triggerSos(
+      int? battery;
+      try {
+        battery = await Battery().batteryLevel;
+      } catch (_) {}
+
+      await SosDispatchService.dispatch(
+        context,
         userId: auth.currentUser?.uid ?? 'unknown',
         userName: auth.currentUser?.displayName ??
             auth.currentUser?.phoneNumber ??
@@ -95,23 +98,8 @@ class _SosScreenState extends State<SosScreen> {
         message: _messageController.text.trim().isEmpty
             ? 'Emergency! Need help!'
             : _messageController.text.trim(),
+        batteryLevel: battery,
       );
-
-      int? battery;
-      try {
-        battery = await Battery().batteryLevel;
-      } catch (_) {}
-
-      final broadcastMsg = sos
-          .sosToBroadcastMessage(
-            alert,
-            auth.currentUser?.displayName ??
-                auth.currentUser?.phoneNumber ??
-                'Unknown',
-          )
-          .copyWith(batteryLevel: battery);
-
-      await mesh.broadcastMessage(broadcastMsg);
 
       HapticFeedback.vibrate();
 
@@ -151,12 +139,12 @@ class _SosScreenState extends State<SosScreen> {
       backgroundColor: AppColors.backgroundDark,
       appBar: AppBar(
         backgroundColor: AppColors.surfaceDark,
-        title: const Text('Send SOS',
+        title: Text('Send SOS',
             style: TextStyle(
                 color: AppColors.textPrimary,
                 fontWeight: FontWeight.bold)),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -178,7 +166,9 @@ class _SosScreenState extends State<SosScreen> {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'This will alert ALL nearby devices and notify all ResQNet users.',
+                      'This alerts nearby devices, your trusted contacts, '
+                      'local police/disaster helplines (by SMS — you\'ll '
+                      'need to tap send once), and all ResQNet users once online.',
                       style: TextStyle(
                           color: AppColors.emergencyRed, fontSize: 12),
                     ),
@@ -187,7 +177,7 @@ class _SosScreenState extends State<SosScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            const Text('Emergency Type',
+            Text('Emergency Type',
                 style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 16,
@@ -246,7 +236,7 @@ class _SosScreenState extends State<SosScreen> {
               },
             ),
             const SizedBox(height: 24),
-            const Text('Message (Optional)',
+            Text('Message (Optional)',
                 style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 16,
@@ -255,11 +245,11 @@ class _SosScreenState extends State<SosScreen> {
             TextField(
               controller: _messageController,
               maxLines: 3,
-              style: const TextStyle(color: AppColors.textPrimary),
+              style: TextStyle(color: AppColors.textPrimary),
               decoration: InputDecoration(
                 hintText: 'Describe your emergency...',
                 hintStyle:
-                    const TextStyle(color: AppColors.textSecondary),
+                    TextStyle(color: AppColors.textSecondary),
                 filled: true,
                 fillColor: AppColors.surfaceDark,
                 border: OutlineInputBorder(
@@ -294,7 +284,7 @@ class _SosScreenState extends State<SosScreen> {
                             location.currentPosition != null
                                 ? '${location.currentPosition!.latitude.toStringAsFixed(4)}, ${location.currentPosition!.longitude.toStringAsFixed(4)}'
                                 : 'GPS not available',
-                            style: const TextStyle(
+                            style: TextStyle(
                                 color: AppColors.textSecondary,
                                 fontSize: 12),
                             overflow: TextOverflow.ellipsis,
@@ -426,7 +416,7 @@ class _CountdownDialogState extends State<_CountdownDialog>
           const Icon(Icons.warning_amber,
               color: AppColors.emergencyRed, size: 48),
           const SizedBox(height: 16),
-          const Text('Sending SOS in',
+          Text('Sending SOS in',
               style:
                   TextStyle(color: AppColors.textSecondary, fontSize: 14)),
           const SizedBox(height: 8),
@@ -449,8 +439,9 @@ class _CountdownDialogState extends State<_CountdownDialog>
             ),
           ),
           const SizedBox(height: 20),
-          const Text(
-            'SOS will be broadcast to all nearby devices automatically.',
+          Text(
+            'Reaches nearby devices, trusted contacts, and police/disaster '
+            'helplines automatically — an SMS opens for you to tap send.',
             textAlign: TextAlign.center,
             style:
                 TextStyle(color: AppColors.textSecondary, fontSize: 12),
@@ -463,12 +454,12 @@ class _CountdownDialogState extends State<_CountdownDialog>
                 HapticFeedback.heavyImpact();
                 Navigator.pop(context, false);
               },
-              icon: const Icon(Icons.cancel,
+              icon: Icon(Icons.cancel,
                   color: AppColors.textSecondary),
-              label: const Text('Cancel SOS',
+              label: Text('Cancel SOS',
                   style: TextStyle(color: AppColors.textSecondary)),
               style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: AppColors.textSecondary),
+                side: BorderSide(color: AppColors.textSecondary),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
                 padding: const EdgeInsets.symmetric(vertical: 12),

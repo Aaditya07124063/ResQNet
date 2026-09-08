@@ -7,6 +7,7 @@ import '../../core/services/mesh_service.dart';
 import '../../core/services/ai_service.dart';
 import '../../core/services/location_service.dart';
 import '../../core/services/profile_service.dart';
+import '../../core/services/voice_note_service.dart';
 import '../../core/models/emergency_message.dart';
 import '../../widgets/emergency_card.dart';
 import '../../widgets/device_tile.dart';
@@ -124,6 +125,50 @@ class _MeshScreenState extends State<MeshScreen>
     context.read<AiService>().stopListening();
   }
 
+  Future<void> _startRecordingVoiceNote() async {
+    final voice = context.read<VoiceNoteService>();
+    final started = await voice.startRecording();
+    if (!started && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Microphone permission needed to record a voice note')),
+      );
+    }
+  }
+
+  Future<void> _stopAndSendVoiceNote() async {
+    final voice = context.read<VoiceNoteService>();
+    final result = await voice.stopRecording();
+    if (result == null || !mounted) return;
+
+    final mesh = context.read<MeshService>();
+    final location = context.read<LocationService>();
+    final profile = context.read<ProfileService>();
+    if (profile.name.isEmpty) {
+      await profile.loadProfile();
+    }
+
+    final msg = EmergencyMessage(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      senderId: FirebaseAuth.instance.currentUser?.uid ?? 'anonymous',
+      senderName: _isAnonymous
+          ? 'Anonymous'
+          : (profile.name.isNotEmpty ? profile.name : 'Unknown'),
+      message: '🎤 Voice note (${result.durationSeconds}s)',
+      type: EmergencyType.general,
+      priority: PriorityLevel.medium,
+      latitude: location.currentPosition?.latitude,
+      longitude: location.currentPosition?.longitude,
+      timestamp: DateTime.now(),
+      bloodGroup: _isAnonymous ? null : profile.bloodGroup,
+      allergies: _isAnonymous ? null : profile.allergies,
+      medications: _isAnonymous ? null : profile.medications,
+      audioBase64: result.base64,
+      audioDurationSeconds: result.durationSeconds,
+    );
+
+    mesh.broadcastMessage(msg);
+  }
+
   @override
   void dispose() {
     _tabController.dispose();
@@ -145,7 +190,7 @@ class _MeshScreenState extends State<MeshScreen>
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Flexible(
+            Flexible(
               child: Text('Mesh',
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -175,12 +220,12 @@ class _MeshScreenState extends State<MeshScreen>
           ],
         ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
           PopupMenuButton<String>(
-            icon: const Icon(Icons.translate, color: AppColors.textPrimary),
+            icon: Icon(Icons.translate, color: AppColors.textPrimary),
             onSelected: (lang) => setState(() => _selectedLanguage = lang),
             itemBuilder: (_) => AiService.supportedLanguages.keys
                 .map((lang) =>
@@ -219,17 +264,17 @@ class _MeshScreenState extends State<MeshScreen>
               controller: _tabController,
               children: [
                 mesh.messages.isEmpty
-                    ? const Center(
+                    ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(Icons.message_outlined,
                                 color: AppColors.textSecondary, size: 48),
-                            SizedBox(height: 12),
+                            const SizedBox(height: 12),
                             Text('No messages yet',
                                 style: TextStyle(
                                     color: AppColors.textSecondary)),
-                            SizedBox(height: 8),
+                            const SizedBox(height: 8),
                             Text('Send an SOS to broadcast a message',
                                 style: TextStyle(
                                     color: AppColors.textSecondary,
@@ -263,9 +308,9 @@ class _MeshScreenState extends State<MeshScreen>
                       ),
 
                 Platform.isIOS
-                    ? const Center(
+                    ? Center(
                         child: Padding(
-                          padding: EdgeInsets.all(24),
+                          padding: const EdgeInsets.all(24),
                           child: Text(
                             'iOS uses Multipeer Connectivity automatically.\nKeep Bluetooth and WiFi ON.',
                             textAlign: TextAlign.center,
@@ -280,11 +325,11 @@ class _MeshScreenState extends State<MeshScreen>
                               mainAxisAlignment:
                                   MainAxisAlignment.center,
                               children: [
-                                const Icon(Icons.wifi_off,
+                                Icon(Icons.wifi_off,
                                     color: AppColors.textSecondary,
                                     size: 48),
                                 const SizedBox(height: 12),
-                                const Text('No nearby devices found',
+                                Text('No nearby devices found',
                                     style: TextStyle(
                                         color: AppColors.textSecondary)),
                                 const SizedBox(height: 8),
@@ -293,7 +338,7 @@ class _MeshScreenState extends State<MeshScreen>
                                       ? 'Scanning... Make sure Bluetooth & WiFi are ON'
                                       : 'Scan stopped',
                                   textAlign: TextAlign.center,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       color: AppColors.textSecondary,
                                       fontSize: 12),
                                 ),
@@ -374,28 +419,79 @@ class _MeshScreenState extends State<MeshScreen>
             ),
           ),
 
+          Consumer<VoiceNoteService>(
+            builder: (context, voice, _) => voice.isRecording
+                ? Container(
+                    width: double.infinity,
+                    color: Colors.red.shade900,
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 6, horizontal: 16),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.fiber_manual_record,
+                            color: Colors.white, size: 12),
+                        SizedBox(width: 6),
+                        Text(
+                          'Recording voice note... release to send (max 20s)',
+                          style: TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+
           Container(
             color: AppColors.surfaceDark,
             padding:
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               children: [
-                GestureDetector(
-                  onTapDown: (_) => _startListening(),
-                  onTapUp: (_) => _stopListening(),
-                  onTapCancel: () => _stopListening(),
-                  child: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: ai.isListening
-                          ? Colors.green
-                          : AppColors.cardDark,
-                      shape: BoxShape.circle,
+                Tooltip(
+                  message: 'Hold to record & send a voice note',
+                  child: Consumer<VoiceNoteService>(
+                    builder: (context, voice, _) => GestureDetector(
+                      onLongPressStart: (_) => _startRecordingVoiceNote(),
+                      onLongPressEnd: (_) => _stopAndSendVoiceNote(),
+                      onLongPressCancel: () => voice.cancelRecording(),
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: voice.isRecording
+                              ? Colors.red
+                              : AppColors.cardDark,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.keyboard_voice,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                      ),
                     ),
-                    child: Icon(
-                      ai.isListening ? Icons.mic : Icons.mic_none,
-                      color: Colors.white,
-                      size: 22,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: 'Hold to speak — fills the text box',
+                  child: GestureDetector(
+                    onTapDown: (_) => _startListening(),
+                    onTapUp: (_) => _stopListening(),
+                    onTapCancel: () => _stopListening(),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: ai.isListening
+                            ? Colors.green
+                            : AppColors.cardDark,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        ai.isListening ? Icons.mic : Icons.mic_none,
+                        color: Colors.white,
+                        size: 22,
+                      ),
                     ),
                   ),
                 ),
@@ -404,10 +500,10 @@ class _MeshScreenState extends State<MeshScreen>
                   child: TextField(
                     controller: _messageController,
                     style:
-                        const TextStyle(color: AppColors.textPrimary),
+                        TextStyle(color: AppColors.textPrimary),
                     decoration: InputDecoration(
                       hintText: 'Type emergency message...',
-                      hintStyle: const TextStyle(
+                      hintStyle: TextStyle(
                           color: AppColors.textSecondary),
                       filled: true,
                       fillColor: AppColors.cardDark,

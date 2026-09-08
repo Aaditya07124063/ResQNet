@@ -1,10 +1,9 @@
 import 'dart:convert';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:io' show Platform;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import '../models/sos_alert.dart';
+import '../network/api_client.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -111,20 +110,29 @@ class NotificationService extends ChangeNotifier {
     }
   }
 
+  /// Phase 20: registers the FCM token with the ResQNet backend
+  /// (`POST /api/v1/devices`, Phase 17) instead of Firestore's
+  /// `user_tokens/{uid}` — the backend now owns push-sending itself
+  /// (`pushNotificationService.ts`), so this is the only registration
+  /// that matters going forward. Best-effort and silent on failure,
+  /// matching the Firestore write's own error handling: a user who
+  /// hasn't completed backend Google/phone sign-in yet (no stored
+  /// backend access token) simply can't register a device server-side
+  /// until they do — this never blocks local notification delivery,
+  /// which works from the FCM token alone.
   Future<void> _saveToken(String token) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
     try {
-      await FirebaseFirestore.instance
-          .collection('user_tokens')
-          .doc(user.uid)
-          .set({
-        'token': token,
-        'userId': user.uid,
-        'updatedAt': DateTime.now().toIso8601String(),
-      }, SetOptions(merge: true));
+      await ApiClient.instance.post(
+        '/devices',
+        auth: true,
+        body: {
+          'platform': Platform.isIOS ? 'ios' : 'android',
+          'pushProvider': 'fcm',
+          'pushToken': token,
+        },
+      );
     } catch (e) {
-      debugPrint('Token save error: $e');
+      debugPrint('Device token registration error: $e');
     }
   }
 
@@ -160,24 +168,11 @@ class NotificationService extends ChangeNotifier {
     debugPrint('Notification tapped: ${message.data}');
   }
 
-  Future<void> broadcastSosNotification(SosAlert alert) async {
-    try {
-      await FirebaseFirestore.instance
-          .collection('sos_broadcasts')
-          .doc(alert.id)
-          .set({
-        'alertId': alert.id,
-        'userId': alert.userId,
-        'userName': alert.userName,
-        'category': alert.category.name.toUpperCase(),
-        'message': alert.message,
-        'latitude': alert.latitude,
-        'longitude': alert.longitude,
-        'timestamp': DateTime.now().toIso8601String(),
-        'notificationSent': false,
-      });
-    } catch (e) {
-      debugPrint('SOS broadcast error: $e');
-    }
-  }
+  // Phase 20: `broadcastSosNotification()` (a Firestore `sos_broadcasts`
+  // write that used to trigger the `sendSosNotification` Cloud Function)
+  // has been removed — the backend's `POST /api/v1/sos` now sends this
+  // same broadcast itself (`pushNotificationService.notifyAllOtherActiveUsers`,
+  // Phase 17), as part of creating the SOS event. See sos_service.dart's
+  // `triggerSos()`, which now calls the backend directly instead of this
+  // method.
 }

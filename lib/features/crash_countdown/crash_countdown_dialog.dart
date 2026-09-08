@@ -1,14 +1,18 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
-import 'package:uuid/uuid.dart';
-import '../../core/models/emergency_message.dart';
+import '../../core/models/sos_alert.dart';
 import '../../core/services/crash_detection_service.dart';
-import '../../core/services/mesh_service.dart';
 import '../../core/services/profile_service.dart';
+import '../../core/services/sos_dispatch_service.dart';
+import '../../features/auth/auth_service.dart';
 
+/// Shown only when CrashDetectionService's multi-signal confidence has
+/// already crossed the confirmation threshold (see CrashConfig) — this
+/// dialog is the last, human-in-the-loop step, not the trigger itself.
+/// The user gets the full countdown to say "I'm OK" and cancel, or can
+/// send SOS immediately without waiting it out.
 class CrashCountdownDialog extends StatefulWidget {
   const CrashCountdownDialog({super.key});
 
@@ -17,8 +21,8 @@ class CrashCountdownDialog extends StatefulWidget {
 }
 
 class _CrashCountdownDialogState extends State<CrashCountdownDialog> {
-  static const int _totalSeconds = 20;
-  int _remaining = _totalSeconds;
+  late int _totalSeconds;
+  late int _remaining;
   Timer? _timer;
   bool _sosSent = false;
 
@@ -26,6 +30,9 @@ class _CrashCountdownDialogState extends State<CrashCountdownDialog> {
   void initState() {
     super.initState();
     HapticFeedback.heavyImpact();
+    _totalSeconds =
+        context.read<CrashDetectionService>().confirmationCountdown.inSeconds;
+    _remaining = _totalSeconds;
     _startCountdown();
   }
 
@@ -44,54 +51,44 @@ class _CrashCountdownDialogState extends State<CrashCountdownDialog> {
   Future<void> _sendSOS() async {
     if (_sosSent) return;
     _sosSent = true;
+    _timer?.cancel();
 
     final crashService = context.read<CrashDetectionService>();
-    final meshService = context.read<MeshService>();
     final profileService = context.read<ProfileService>();
+    final auth = context.read<AuthService>();
+    crashService.confirm();
 
-    double? lat, lng;
-    try {
-      final pos = await Geolocator.getCurrentPosition()
-          .timeout(const Duration(seconds: 5));
-      lat = pos.latitude;
-      lng = pos.longitude;
-    } catch (_) {
-      try {
-        final last = await Geolocator.getLastKnownPosition();
-        lat = last?.latitude;
-        lng = last?.longitude;
-      } catch (_) {}
-    }
+    final evidence = crashService.evidence;
+    final speedDrop = evidence.speedDropMps;
+    final speedStr =
+        speedDrop != null && speedDrop > 0 ? ' | Speed drop: ${(speedDrop * 3.6).toStringAsFixed(0)} km/h' : '';
+    final name = profileService.name.isNotEmpty
+        ? profileService.name
+        : (auth.currentUser?.displayName ??
+            auth.currentUser?.phoneNumber ??
+            'Unknown');
 
-    final speed = crashService.speedAtImpact;
-    final speedStr = speed > 0
-        ? ' | Speed at impact: ${speed.toStringAsFixed(0)} km/h'
-        : '';
-    final name =
-        profileService.name.isNotEmpty ? profileService.name : 'Unknown';
-
-    final message = EmergencyMessage(
-      id: const Uuid().v4(),
-      senderId: name,
-      senderName: name,
-      message: '🚗 VEHICLE CRASH DETECTED — AUTO SOS$speedStr\n'
+    // Same routing as a manual SOS: mesh (nearby devices), trusted
+    // contacts + police/disaster hotline (SMS, works offline), and all
+    // ResQNet users once online — a crash is exactly when someone might
+    // be unable to trigger SOS themselves.
+    await SosDispatchService.dispatch(
+      context,
+      userId: auth.currentUser?.uid ?? 'unknown',
+      userName: name,
+      category: SosCategory.rescue,
+      message: '🚗 VEHICLE CRASH DETECTED — AUTO SOS '
+          '(confidence ${(evidence.totalConfidence * 100).toStringAsFixed(0)}%)$speedStr\n'
           'Blood: ${profileService.bloodGroup} | Allergies: ${profileService.allergies}',
-      type: EmergencyType.rescue,
-      priority: PriorityLevel.critical,
-      latitude: lat,
-      longitude: lng,
-      timestamp: DateTime.now(),
+      eventSource: 'crash_detection',
     );
-
-    await meshService.broadcastMessage(message);
     HapticFeedback.vibrate();
 
     if (mounted) {
-      crashService.resetCrash();
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('🚨 Crash SOS sent automatically'),
+          content: Text('🚨 Crash SOS sent'),
           backgroundColor: Colors.red,
         ),
       );
@@ -100,7 +97,7 @@ class _CrashCountdownDialogState extends State<CrashCountdownDialog> {
 
   void _iAmOk() {
     _timer?.cancel();
-    context.read<CrashDetectionService>().resetCrash();
+    context.read<CrashDetectionService>().cancel();
     HapticFeedback.selectionClick();
     Navigator.of(context).pop();
   }
@@ -113,10 +110,12 @@ class _CrashCountdownDialogState extends State<CrashCountdownDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final crashService = context.watch<CrashDetectionService>();
+    final evidence = crashService.evidence;
     final progress = _remaining / _totalSeconds;
 
-    return WillPopScope(
-      onWillPop: () async => false,
+    return PopScope(
+      canPop: false,
       child: AlertDialog(
         backgroundColor: Colors.red.shade900,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -126,11 +125,11 @@ class _CrashCountdownDialogState extends State<CrashCountdownDialog> {
             SizedBox(width: 8),
             Expanded(
               child: Text(
-                'CRASH DETECTED',
+                'POSSIBLE ACCIDENT DETECTED',
                 style: TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
-                  fontSize: 18,
+                  fontSize: 16,
                 ),
               ),
             ),
@@ -140,11 +139,11 @@ class _CrashCountdownDialogState extends State<CrashCountdownDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-              'Vehicle crash detected.\nSending SOS in...',
+              'Sending SOS in...',
               style: TextStyle(color: Colors.white70, fontSize: 14),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             Stack(
               alignment: Alignment.center,
               children: [
@@ -168,25 +167,77 @@ class _CrashCountdownDialogState extends State<CrashCountdownDialog> {
                 ),
               ],
             ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Confidence: ${(evidence.totalConfidence * 100).toStringAsFixed(0)}%',
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Impact ${(evidence.accelerationScore * 100).toStringAsFixed(0)}% · '
+                    'Rotation ${(evidence.gyroScore * 100).toStringAsFixed(0)}% · '
+                    'Speed drop ${(evidence.speedDropScore * 100).toStringAsFixed(0)}% · '
+                    'Stillness ${(evidence.postImpactScore * 100).toStringAsFixed(0)}%',
+                    style: const TextStyle(color: Colors.white60, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
         actionsAlignment: MainAxisAlignment.center,
         actions: [
-          ElevatedButton.icon(
-            onPressed: _iAmOk,
-            icon: const Icon(Icons.check_circle, color: Colors.red),
-            label: const Text(
-              "I'M OK — CANCEL",
-              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(30),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _iAmOk,
+                  icon: const Icon(Icons.check_circle, color: Colors.red),
+                  label: const Text(
+                    "I'M OK — CANCEL",
+                    style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _sosSent ? null : _sendSOS,
+                  icon: const Icon(Icons.sos, color: Colors.white),
+                  label: const Text(
+                    'SEND SOS NOW',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.white70),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

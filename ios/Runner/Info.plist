@@ -26,6 +26,40 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>ResQNet needs your location to include it in SOS alerts, show nearby hazards and safe zones, and download offline maps for your area.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>ResQNet needs access to your photos so you can set a profile picture.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>ResQNet uses the microphone so you can speak an emergency message or send a voice note when typing isn't possible.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>ResQNet converts your speech to text so you can report an emergency without typing.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>ResQNet uses Bluetooth to relay emergency alerts directly between nearby phones when there is no internet connection.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>ResQNet uses Bluetooth to relay emergency alerts directly between nearby phones when there is no internet connection.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>ResQNet uses your local Wi-Fi to relay emergency and hazard alerts directly between nearby phones when there is no internet connection.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_resqnet-mesh._tcp</string>
+		<string>_resqnet-mesh._udp</string>
+	</array>
+	<!-- flutter_foreground_task (background crash/earthquake monitoring).
+	     iOS has no equivalent to Android's persistent foreground service —
+	     "fetch" + BGTaskScheduler only grant periodic, OS-scheduled
+	     background windows, not continuous execution. Real-time sensor
+	     monitoring with the app fully backgrounded is not achievable on
+	     iOS through this or any Flutter plugin; this is a platform limit,
+	     not a gap in this integration. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.pravera.flutter_foreground_task.refresh</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

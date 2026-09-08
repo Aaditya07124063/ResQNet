@@ -2,18 +2,24 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CLIENT_ID</key>
+	<string>427023478978-1n593h8fuhrucrmn8arbab30h3o2gasb.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.427023478978-1n593h8fuhrucrmn8arbab30h3o2gasb</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>427023478978-0e4lp0vghvab47j6btsned2k7m64jdnl.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
-	<string>AIzaSyCcw_R5yJCPW-mijFyB9vnKoED5I48nnBM</string>
+	<string>AIzaSyATmXuTvz18eSTFtkEpOc7PqziozR6VrRo</string>
 	<key>GCM_SENDER_ID</key>
-	<string>349015883051</string>
+	<string>427023478978</string>
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
 	<string>com.example.resqnet</string>
 	<key>PROJECT_ID</key>
-	<string>resqnet-2024</string>
+	<string>resqnet-f955d</string>
 	<key>STORAGE_BUCKET</key>
-	<string>resqnet-2024.firebasestorage.app</string>
+	<string>resqnet-f955d.firebasestorage.app</string>
 	<key>IS_ADS_ENABLED</key>
 	<false></false>
 	<key>IS_ANALYTICS_ENABLED</key>
@@ -25,6 +31,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:349015883051:ios:14aefbefce1e2fd81f596e</string>
+	<string>1:427023478978:ios:26faee567d6fb68b660b5b</string>
 </dict>
 </plist>

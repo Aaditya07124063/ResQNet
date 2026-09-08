@@ -1,88 +1,73 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/models/emergency_message.dart';
+import '../../core/network/api_client.dart';
+import '../../core/network/api_exception.dart';
+import '../../core/services/ai_service.dart';
+import '../../core/services/emergency_communication_service.dart';
+import '../../widgets/trust_tier_badge.dart';
 
-class SosHistoryScreen extends StatelessWidget {
+/// Phase 20: reads the caller's own SOS history from the ResQNet backend
+/// (`GET /api/v1/sos`, Phase 11) instead of Firestore's
+/// `sos_history/{uid}/messages`. The backend's `SosEvent` shape (category
+/// + free-text message + status + timestamps) has no `type`/`priority`/
+/// icon/color fields the way the old Firestore-stored `EmergencyMessage`
+/// did — those were derived client-side via [AiService] at broadcast
+/// time and persisted alongside it. Here they're re-derived the same way,
+/// from the same category/message text, purely for display styling; nothing
+/// about the underlying SOS record depends on this classification.
+///
+/// **Known gap, not invented around**: swipe-to-delete / "clear all" from
+/// the old Firestore version have no backend equivalent — Phase 11
+/// deliberately did not add a DELETE endpoint for `sos_events` (an
+/// emergency record is treated as an audit trail, not user-erasable data;
+/// `status` transitions exist instead of deletion). Removed from this
+/// screen rather than left as dead buttons that call nothing.
+class SosHistoryScreen extends StatefulWidget {
   const SosHistoryScreen({super.key});
 
-  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+  @override
+  State<SosHistoryScreen> createState() => _SosHistoryScreenState();
+}
 
-  Stream<QuerySnapshot> get _stream => FirebaseFirestore.instance
-      .collection('sos_history')
-      .doc(_uid)
-      .collection('messages')
-      .orderBy('timestamp', descending: true)
-      .snapshots();
+class _SosHistoryScreenState extends State<SosHistoryScreen> {
+  late Future<List<_HistoryEntry>> _future;
 
-  Future<void> _delete(BuildContext context, String docId) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppColors.surfaceDark,
-        title: const Text('Delete Entry',
-            style: TextStyle(color: AppColors.textPrimary)),
-        content: const Text('Remove this SOS from history?',
-            style: TextStyle(color: AppColors.textSecondary)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete',
-                style: TextStyle(color: AppColors.emergencyRed)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) {
-      await FirebaseFirestore.instance
-          .collection('sos_history')
-          .doc(_uid)
-          .collection('messages')
-          .doc(docId)
-          .delete();
-    }
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
   }
 
-  Future<void> _clearAll(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppColors.surfaceDark,
-        title: const Text('Clear All History',
-            style: TextStyle(color: AppColors.textPrimary)),
-        content: const Text('Delete all SOS history? This cannot be undone.',
-            style: TextStyle(color: AppColors.textSecondary)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Clear All',
-                style: TextStyle(color: AppColors.emergencyRed)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) {
-      final snap = await FirebaseFirestore.instance
-          .collection('sos_history')
-          .doc(_uid)
-          .collection('messages')
-          .get();
-      for (final doc in snap.docs) {
-        await doc.reference.delete();
-      }
-    }
+  Future<List<_HistoryEntry>> _load() async {
+    final ai = context.read<AiService>();
+    final response = await ApiClient.instance.get('/sos', auth: true);
+    final events = (response['events'] as List).cast<Map<String, dynamic>>();
+    return events.map((e) {
+      final message = (e['message'] as String?) ?? '';
+      final type = ai.classifyEmergency(message);
+      final priority = ai.assessPriority(message, type);
+      final msg = EmergencyMessage(
+        id: e['id'] as String,
+        senderId: '',
+        senderName: '',
+        message: message,
+        type: type,
+        priority: priority,
+        latitude: (e['latitude'] as num?)?.toDouble(),
+        longitude: (e['longitude'] as num?)?.toDouble(),
+        timestamp: DateTime.parse(e['clientCreatedAt'] as String),
+      );
+      return _HistoryEntry(msg, e['status'] as String, e['originVerificationState'] as String?);
+    }).toList();
+  }
+
+  Future<void> _refresh() async {
+    final next = _load();
+    setState(() => _future = next);
+    await next;
   }
 
   @override
@@ -91,24 +76,16 @@ class SosHistoryScreen extends StatelessWidget {
       backgroundColor: AppColors.backgroundDark,
       appBar: AppBar(
         backgroundColor: AppColors.surfaceDark,
-        title: const Text('SOS History',
+        title: Text('SOS History',
             style: TextStyle(
                 color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => Navigator.pop(context),
         ),
-        actions: [
-          IconButton(
-            icon:
-                const Icon(Icons.delete_sweep, color: AppColors.emergencyRed),
-            tooltip: 'Clear all',
-            onPressed: () => _clearAll(context),
-          ),
-        ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _stream,
+      body: FutureBuilder<List<_HistoryEntry>>(
+        future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
@@ -117,22 +94,49 @@ class SosHistoryScreen extends StatelessWidget {
             );
           }
 
-          final docs = snapshot.data?.docs ?? [];
+          if (snapshot.hasError) {
+            final isNetwork =
+                snapshot.error is ApiException && (snapshot.error as ApiException).isNetworkError;
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline,
+                      color: AppColors.textSecondary, size: 64),
+                  const SizedBox(height: 16),
+                  Text(
+                    isNetwork
+                        ? 'Could not reach the server. Check your connection.'
+                        : 'Could not load SOS history.',
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: _refresh,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            );
+          }
 
-          if (docs.isEmpty) {
-            return const Center(
+          final entries = snapshot.data ?? [];
+
+          if (entries.isEmpty) {
+            return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.history,
                       color: AppColors.textSecondary, size: 64),
-                  SizedBox(height: 16),
+                  const SizedBox(height: 16),
                   Text('No SOS history yet',
                       style: TextStyle(
                           color: AppColors.textPrimary,
                           fontSize: 18,
                           fontWeight: FontWeight.bold)),
-                  SizedBox(height: 8),
+                  const SizedBox(height: 8),
                   Text('Your sent SOS alerts will appear here',
                       style: TextStyle(
                           color: AppColors.textSecondary, fontSize: 14)),
@@ -141,32 +145,17 @@ class SosHistoryScreen extends StatelessWidget {
             );
           }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: docs.length,
-            itemBuilder: (_, i) {
-              final doc = docs[i];
-              final data = doc.data() as Map<String, dynamic>;
-              final msg = EmergencyMessage.fromJson(data);
+          return RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: entries.length,
+              itemBuilder: (_, i) {
+                final msg = entries[i].message;
+                final status = entries[i].status;
 
-              return Dismissible(
-                key: Key(doc.id),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 20),
-                  decoration: BoxDecoration(
-                    color: AppColors.emergencyRed.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.delete,
-                      color: AppColors.emergencyRed),
-                ),
-                confirmDismiss: (_) async {
-                  await _delete(context, doc.id);
-                  return false;
-                },
-                child: Card(
+                return Card(
+                  key: Key(msg.id),
                   color: AppColors.cardDark,
                   margin: const EdgeInsets.only(bottom: 12),
                   shape: RoundedRectangleBorder(
@@ -208,8 +197,7 @@ class SosHistoryScreen extends StatelessWidget {
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 8, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: msg.priorityColor
-                                          .withOpacity(0.15),
+                                      color: msg.priorityColor.withOpacity(0.15),
                                       borderRadius:
                                           BorderRadius.circular(8),
                                       border: Border.all(
@@ -217,7 +205,7 @@ class SosHistoryScreen extends StatelessWidget {
                                               .withOpacity(0.5)),
                                     ),
                                     child: Text(
-                                      msg.priority.name.toUpperCase(),
+                                      status.toUpperCase(),
                                       style: TextStyle(
                                           color: msg.priorityColor,
                                           fontSize: 10,
@@ -229,7 +217,7 @@ class SosHistoryScreen extends StatelessWidget {
                               const SizedBox(height: 6),
                               Text(
                                 msg.message,
-                                style: const TextStyle(
+                                style: TextStyle(
                                     color: AppColors.textPrimary,
                                     fontSize: 13),
                                 maxLines: 2,
@@ -238,14 +226,14 @@ class SosHistoryScreen extends StatelessWidget {
                               const SizedBox(height: 6),
                               Row(
                                 children: [
-                                  const Icon(Icons.access_time,
+                                  Icon(Icons.access_time,
                                       size: 12,
                                       color: AppColors.textSecondary),
                                   const SizedBox(width: 4),
                                   Text(
                                     DateFormat('dd MMM yyyy  HH:mm')
                                         .format(msg.timestamp),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                         fontSize: 11,
                                         color: AppColors.textSecondary),
                                   ),
@@ -262,18 +250,50 @@ class SosHistoryScreen extends StatelessWidget {
                                   ],
                                 ],
                               ),
+                              Builder(builder: (context) {
+                                final tier = trustTierForBackendRecord(entries[i].originVerificationState);
+                                if (tier == null) return const SizedBox.shrink();
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 6),
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: TrustTierBadge(tier: tier),
+                                  ),
+                                );
+                              }),
                             ],
                           ),
                         ),
                       ),
                     ],
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           );
         },
       ),
     );
   }
 }
+
+class _HistoryEntry {
+  final EmergencyMessage message;
+  final String status;
+  /// Raw `sos_events.origin_verification_state` from the backend (Phase 1):
+  /// 'not_applicable' (the normal, JWT-authenticated online path — no
+  /// mesh/signature involved), 'verified' (a mesh-relayed event whose
+  /// signature the backend confirmed against a registered device key), or
+  /// 'unverified_unregistered' (relayed, but the origin device has never
+  /// registered a key — preserved, never attributed, never falsely shown
+  /// as verified). Displayed precisely, never collapsed into a generic
+  /// "verified" badge — see trustTierForBackendRecord()/TrustTierBadge.
+  final String? originVerificationState;
+  _HistoryEntry(this.message, this.status, this.originVerificationState);
+}
+
+// The trust badge itself now lives in widgets/trust_tier_badge.dart
+// (TrustTierBadge) — the one shared place every screen renders this,
+// fed here via emergency_communication_service.dart's
+// trustTierForBackendRecord(), so this screen's wording can never drift
+// from mesh_screen.dart's/dashboard_screen.dart's (via EmergencyCard).

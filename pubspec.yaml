@@ -19,7 +19,6 @@ dependencies:
   firebase_auth: ^5.3.0
   firebase_messaging: ^15.1.0
   flutter_local_notifications: ^17.2.2
-  firebase_storage: ^12.3.2
   google_sign_in: ^6.2.1
   uuid: ^4.3.3
   intl: ^0.19.0
@@ -46,7 +45,10 @@ dependencies:
   path_provider: ^2.1.5
   flutter_foreground_task: ^11.0.1
   share_plus: ^13.3.0
-
+  quick_actions: ^1.1.0
+  web_socket_channel: ^3.0.1
+  connectivity_plus: ^7.3.1
+  pointycastle: ^4.0.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

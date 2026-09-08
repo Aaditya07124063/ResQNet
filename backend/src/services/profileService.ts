@@ -65,3 +65,27 @@ export async function upsertProfile(userId: string, input: ProfileUpdateInput): 
   );
   return toUserProfile(rows[0]!);
 }
+
+/**
+ * Sets/replaces the caller's own profile-image object key (Phase 6). Only
+ * ever the MinIO key is stored — never a URL, signed or otherwise (see
+ * backend/src/services/storageService.ts). Upserts the same as
+ * upsertProfile() since a user may upload a photo before ever having
+ * saved any other profile field.
+ */
+export async function setProfileImageKey(userId: string, objectKey: string): Promise<UserProfile> {
+  const { rows } = await pool.query<DbUserProfileRow>(
+    `INSERT INTO user_profiles (user_id, profile_image_object_key)
+     VALUES ($1, $2)
+     ON CONFLICT (user_id) DO UPDATE SET profile_image_object_key = EXCLUDED.profile_image_object_key
+     RETURNING *`,
+    [userId, objectKey],
+  );
+  return toUserProfile(rows[0]!);
+}
+
+export async function clearProfileImageKey(userId: string): Promise<void> {
+  await pool.query('UPDATE user_profiles SET profile_image_object_key = NULL WHERE user_id = $1', [
+    userId,
+  ]);
+}

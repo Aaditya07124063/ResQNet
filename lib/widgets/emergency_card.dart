@@ -5,6 +5,9 @@ import 'package:provider/provider.dart';
 import '../core/constants/app_colors.dart';
 import '../core/models/emergency_message.dart';
 import '../core/services/ai_service.dart';
+import '../core/services/emergency_communication_service.dart';
+import '../core/services/voice_note_service.dart';
+import 'trust_tier_badge.dart';
 
 class EmergencyCard extends StatelessWidget {
   final EmergencyMessage message;
@@ -76,7 +79,7 @@ class EmergencyCard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         message.senderName,
-                        style: const TextStyle(
+                        style: TextStyle(
                             color: AppColors.textPrimary,
                             fontWeight: FontWeight.bold,
                             fontSize: 14),
@@ -102,11 +105,54 @@ class EmergencyCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TrustTierBadge(tier: trustTierForReceivedMessage(message)),
+                ),
+                const SizedBox(height: 6),
                 Text(
                   message.message,
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: AppColors.textSecondary, fontSize: 13),
                 ),
+                if (message.audioBase64 != null) ...[
+                  const SizedBox(height: 8),
+                  Consumer<VoiceNoteService>(
+                    builder: (context, voice, _) {
+                      final isPlaying = voice.playingMessageId == message.id;
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: AppColors.accentBlue.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            InkWell(
+                              onTap: () => voice.play(
+                                  message.id, message.audioBase64!),
+                              child: Icon(
+                                isPlaying
+                                    ? Icons.stop_circle
+                                    : Icons.play_circle_fill,
+                                color: AppColors.accentBlue,
+                                size: 26,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Voice note • ${message.audioDurationSeconds ?? 0}s',
+                              style: const TextStyle(
+                                  color: AppColors.accentBlue, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ],
                 if (hasMedical) ...[
                   const SizedBox(height: 8),
                   Container(

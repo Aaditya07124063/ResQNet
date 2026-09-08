@@ -55,6 +55,19 @@ describe('sessionService', () => {
     it('rejects a malformed token', () => {
       expect(() => verifyAccessToken('not-a-jwt')).toThrow(/Invalid or expired session token/);
     });
+
+    // Phase 19 security audit: algorithms is now pinned to ['HS256']
+    // explicitly on verify — these prove that pin actually does something,
+    // not just that jsonwebtoken's own default inference happens to be safe.
+    it('rejects an unsigned ("alg: none") token even with a correct-looking payload', () => {
+      const noneAlgToken = jwt.sign({ sub: 'user-6' }, '', { algorithm: 'none' });
+      expect(() => verifyAccessToken(noneAlgToken)).toThrow(/Invalid or expired session token/);
+    });
+
+    it('rejects a token signed with the right secret but a different HMAC algorithm (HS384)', () => {
+      const wrongAlg = jwt.sign({ sub: 'user-7' }, env.JWT_ACCESS_SECRET, { algorithm: 'HS384' });
+      expect(() => verifyAccessToken(wrongAlg)).toThrow(/Invalid or expired session token/);
+    });
   });
 
   describe('rotateRefreshToken', () => {

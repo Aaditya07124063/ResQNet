@@ -27,6 +27,7 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         multiDexEnabled = true
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -44,4 +45,12 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.22")
     implementation(platform("com.google.firebase:firebase-bom:33.1.0"))
+
+    // Instrumented (on-device/emulator) tests for DeviceKeyPlugin's real
+    // Android Keystore behavior — plain JVM unit tests can't exercise
+    // AndroidKeyStore meaningfully (it isn't available outside a real
+    // Android runtime), so this uses the standard androidx.test/JUnit4
+    // instrumented-test setup instead.
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
 }

@@ -9,3 +9,9 @@ process.env.PG_DATABASE = process.env.PG_DATABASE ?? 'test_db';
 process.env.GOOGLE_OAUTH_CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID ?? 'test-client-id.apps.googleusercontent.com';
 process.env.JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET ?? 'test-access-secret-needs-32-chars-minimum';
 process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET ?? 'test-refresh-secret-needs-32-chars-minimum';
+process.env.EMPLOYEE_JWT_ACCESS_SECRET =
+  process.env.EMPLOYEE_JWT_ACCESS_SECRET ?? 'test-employee-access-secret-needs-32-chars-min';
+process.env.EMPLOYEE_JWT_REFRESH_SECRET =
+  process.env.EMPLOYEE_JWT_REFRESH_SECRET ?? 'test-employee-refresh-secret-needs-32-chars-min';
+process.env.MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY ?? 'test_minio_access_key';
+process.env.MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY ?? 'test_minio_secret_key';

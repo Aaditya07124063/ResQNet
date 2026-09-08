@@ -146,4 +146,24 @@ class EmergencyContactsService extends ChangeNotifier {
     _isLoading = false;
     notifyListeners();
   }
+
+  static const Map<String, String> _nameToCode = {
+    'India': 'IN',
+    'Nepal': 'NP',
+  };
+
+  /// Loads hotlines straight from a known country name (e.g. the user's
+  /// Profile selection) — instant and offline, no GPS wait/timeout risk.
+  /// Falls back to GPS detection if the name isn't recognized.
+  Future<void> loadForCountryName(String countryName) async {
+    final code = _nameToCode[countryName];
+    if (code == null) {
+      await detectAndLoadContacts();
+      return;
+    }
+    _countryName = _countryNames[code] ?? countryName;
+    _contacts = _countryContacts[code] ?? _countryContacts['DEFAULT']!;
+    _isLoading = false;
+    notifyListeners();
+  }
 }

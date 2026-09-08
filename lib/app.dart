@@ -1,10 +1,12 @@
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'core/constants/app_routes.dart';
+import 'core/network/backend_session_controller.dart';
 import 'core/services/theme_service.dart';
+import 'features/auth/auth_service.dart';
 import 'features/auth/login_screen.dart';
 import 'features/home/home_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
@@ -123,27 +125,64 @@ class ResQNetApp extends StatelessWidget {
   }
 }
 
-class _AuthGate extends StatelessWidget {
+class _AuthGate extends StatefulWidget {
   const _AuthGate();
+
+  @override
+  State<_AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<_AuthGate> {
+  @override
+  void initState() {
+    super.initState();
+    // Phase 4B: kick off backend-session restoration in parallel with
+    // Firebase's own state, purely so it's tracked (AuthService.backendSession)
+    // for Phase 4C/4D to consume later. Deliberately NOT awaited and NOT
+    // used to decide what this widget renders below — Firebase's
+    // authStateChanges() remains the sole gate until Google login is cut
+    // over. A failure here must never affect the (Firebase-driven) auth
+    // flow, hence the broad catch.
+    unawaited(
+      context.read<AuthService>().restoreBackendSession().then((_) {}, onError: (_) {}),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     const primary = ThemeService.primaryColor;
+    // Phase 4C: the backend Google-login path is now authoritative for
+    // Google sign-in, alongside Firebase (still authoritative for phone
+    // login, until Phase 9). A user is considered signed in if EITHER
+    // session is valid — a backend-authenticated Google user must never
+    // be bounced back to LoginScreen just because FirebaseAuth.currentUser
+    // is null, since backend Google login deliberately does not create a
+    // Firebase session at all.
+    final backendStatus = context.watch<AuthService>().backendSession.status;
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       initialData: FirebaseAuth.instance.currentUser,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            !snapshot.hasData) {
+        final firebaseStillResolving =
+            snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData;
+        // Wait for the startup restoreBackendSession() call (kicked off in
+        // initState) to finish at least once before deciding — otherwise a
+        // Google-only user would flash LoginScreen for a frame on every
+        // cold start before their restored backend session is observed.
+        final backendStillResolving =
+            backendStatus == BackendSessionStatus.unknown ||
+                backendStatus == BackendSessionStatus.restoring;
+        if (firebaseStillResolving || backendStillResolving) {
           return Scaffold(
             body:
                 Center(child: CircularProgressIndicator(color: primary)),
           );
         }
-        if (snapshot.hasData && snapshot.data != null) {
-          return const HomeScreen();
-        }
-        if (kDebugMode) {
+        final firebaseSignedIn = snapshot.hasData && snapshot.data != null;
+        final backendSignedIn =
+            backendStatus == BackendSessionStatus.authenticated;
+        if (firebaseSignedIn || backendSignedIn) {
           return const HomeScreen();
         }
         return const LoginScreen();

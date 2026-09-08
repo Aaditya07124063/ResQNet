@@ -437,9 +437,23 @@ workflow in §19-21 with its own audit trail distinct from general
 6. **Session/token model**: **JWT access token + refresh token**, refresh
    events tracked server-side (a `sessions` table) for revocation.
 
+## Additional decision (2026-09-04)
+
+9. **Domain deferred until app store / Play Store submission.** For VPS
+   testing before then, the Flutter app talks directly to the VPS's
+   IP:port over plain HTTP (`ResQNetEnvironment.vps` in
+   `lib/core/network/api_config.dart`, set via `--dart-define`). The
+   `production` environment still requires a real HTTPS domain before it
+   will resolve — that guard is intentionally NOT relaxed to match, since
+   shipping a real user-facing build over plain-IP HTTP would be a genuine
+   downgrade, not just a convenience. Testing-over-IP and
+   production-needs-a-domain are two different bars.
+
 ## Still open — needed before Phase 18 (deployment), not before Phase 1-4
 
-7. Production domain, GitHub org (for GHCR), and currently-free VPS port
-   block — still unconfirmed from the earlier H1 exchange.
+7. GitHub org (for GHCR) and currently-free VPS port block — still
+   unconfirmed from the earlier H1 exchange. The VPS's actual IP address is
+   also still needed (for the `vps` testing environment above, not just for
+   final deployment).
 8. What already exists on the VPS under the Orbyatravel name, so isolation
    can be verified rather than assumed.

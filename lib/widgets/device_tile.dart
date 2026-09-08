@@ -34,7 +34,7 @@ class DeviceTile extends StatelessWidget {
         ),
       ),
       title: Text(device.deviceName,
-          style: const TextStyle(color: AppColors.textPrimary)),
+          style: TextStyle(color: AppColors.textPrimary)),
       subtitle: Text(
         device.isConnected
             ? 'Connected'

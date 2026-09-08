@@ -41,48 +41,50 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyBWJRtMqBncpF92kLOIIl6ZcF3ocVMnBN0',
-    appId: '1:349015883051:web:49a28da65a5539e01f596e',
-    messagingSenderId: '349015883051',
-    projectId: 'resqnet-2024',
-    authDomain: 'resqnet-2024.firebaseapp.com',
-    storageBucket: 'resqnet-2024.firebasestorage.app',
-    measurementId: 'G-KFTR3QJB56',
+    apiKey: 'AIzaSyCTeeq_LvhYSESuJvjPRsslVUE4l-lOKjk',
+    appId: '1:427023478978:web:e10c6fc0e8a27b57660b5b',
+    messagingSenderId: '427023478978',
+    projectId: 'resqnet-f955d',
+    authDomain: 'resqnet-f955d.firebaseapp.com',
+    storageBucket: 'resqnet-f955d.firebasestorage.app',
+    measurementId: 'G-LJBDX1X5MN',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyAKe4JRJkY6jPP6DNsuuMw31hkkwq2Qp_g',
-    appId: '1:349015883051:android:596e641dbd9d2bbc1f596e',
-    messagingSenderId: '349015883051',
-    projectId: 'resqnet-2024',
-    storageBucket: 'resqnet-2024.firebasestorage.app',
+    apiKey: 'AIzaSyBDChld7yGNSC9GeT0uTFLgdGu2VzMUVoo',
+    appId: '1:427023478978:android:8f14d966949e3cd4660b5b',
+    messagingSenderId: '427023478978',
+    projectId: 'resqnet-f955d',
+    storageBucket: 'resqnet-f955d.firebasestorage.app',
   );
-
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyCcw_R5yJCPW-mijFyB9vnKoED5I48nnBM',
-    appId: '1:349015883051:ios:14aefbefce1e2fd81f596e',
-    messagingSenderId: '349015883051',
-    projectId: 'resqnet-2024',
-    storageBucket: 'resqnet-2024.firebasestorage.app',
+    apiKey: 'AIzaSyATmXuTvz18eSTFtkEpOc7PqziozR6VrRo',
+    appId: '1:427023478978:ios:26faee567d6fb68b660b5b',
+    messagingSenderId: '427023478978',
+    projectId: 'resqnet-f955d',
+    storageBucket: 'resqnet-f955d.firebasestorage.app',
+    androidClientId: '427023478978-0e4lp0vghvab47j6btsned2k7m64jdnl.apps.googleusercontent.com',
+    iosClientId: '427023478978-1n593h8fuhrucrmn8arbab30h3o2gasb.apps.googleusercontent.com',
     iosBundleId: 'com.example.resqnet',
   );
-
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyCcw_R5yJCPW-mijFyB9vnKoED5I48nnBM',
-    appId: '1:349015883051:ios:14aefbefce1e2fd81f596e',
-    messagingSenderId: '349015883051',
-    projectId: 'resqnet-2024',
-    storageBucket: 'resqnet-2024.firebasestorage.app',
+    apiKey: 'AIzaSyATmXuTvz18eSTFtkEpOc7PqziozR6VrRo',
+    appId: '1:427023478978:ios:26faee567d6fb68b660b5b',
+    messagingSenderId: '427023478978',
+    projectId: 'resqnet-f955d',
+    storageBucket: 'resqnet-f955d.firebasestorage.app',
+    androidClientId: '427023478978-0e4lp0vghvab47j6btsned2k7m64jdnl.apps.googleusercontent.com',
+    iosClientId: '427023478978-1n593h8fuhrucrmn8arbab30h3o2gasb.apps.googleusercontent.com',
     iosBundleId: 'com.example.resqnet',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyBWJRtMqBncpF92kLOIIl6ZcF3ocVMnBN0',
-    appId: '1:349015883051:web:d4303e928c22d8be1f596e',
-    messagingSenderId: '349015883051',
-    projectId: 'resqnet-2024',
-    authDomain: 'resqnet-2024.firebaseapp.com',
-    storageBucket: 'resqnet-2024.firebasestorage.app',
-    measurementId: 'G-J6Z6DTTVR2',
+    apiKey: 'AIzaSyCTeeq_LvhYSESuJvjPRsslVUE4l-lOKjk',
+    appId: '1:427023478978:web:a2770ad3edd218a8660b5b',
+    messagingSenderId: '427023478978',
+    projectId: 'resqnet-f955d',
+    authDomain: 'resqnet-f955d.firebaseapp.com',
+    storageBucket: 'resqnet-f955d.firebasestorage.app',
+    measurementId: 'G-TDC0GSNDRX',
   );
 }

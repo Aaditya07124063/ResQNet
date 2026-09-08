@@ -1,0 +1,71 @@
+# ResQNet production deploy — Phase 18.
+#
+# Deliberately MANUAL ONLY (workflow_dispatch) — this project has treated
+# every production action as something a human explicitly decides to do,
+# not something that fires automatically on a green CI run. backend-ci.yml
+# still runs on every push/PR; this workflow just consumes an image it
+# already built and published.
+#
+# CANNOT be exercised from a local dev sandbox — it requires real
+# Hostinger SSH access and a real deployed .env.prod, neither of which
+# exist there. See docs/DONE.md's Phase 18 entry for the exact blockers
+# (VPS IP, GHCR namespace/org, free port, domain — all still open per
+# docs/PLAN.md's "Still open" list) before this can actually be run.
+name: Deploy to production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Commit SHA of the backend-ci.yml-built image to deploy (must already exist in GHCR)"
+        required: true
+        type: string
+
+# Only one deploy at a time, ever — never cancel one mid-flight (that
+# could leave the api container half-recreated), so no cancel-in-progress.
+concurrency:
+  group: resqnet-production-deploy
+
+jobs:
+  deploy:
+    name: Deploy resqnet-api to Hostinger
+    runs-on: ubuntu-latest
+    # A GitHub "production" Environment can require manual reviewer
+    # approval before this job starts — configure that in repo settings
+    # once the VPS/secrets below actually exist; not something this
+    # workflow file can set up on its own.
+    environment: production
+    steps:
+      # Deliberately NOT using a third-party SSH action here — this
+      # project prefers reviewable, inline scripts over opaque marketplace
+      # actions for anything that touches production credentials.
+      - name: Deploy over SSH
+        env:
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USER }}
+          SSH_KEY: ${{ secrets.HOSTINGER_SSH_KEY }}
+          SSH_PORT: ${{ secrets.HOSTINGER_SSH_PORT }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SSH_HOST:-}" ] || [ -z "${SSH_USER:-}" ] || [ -z "${SSH_KEY:-}" ]; then
+            echo "::error::HOSTINGER_SSH_HOST / HOSTINGER_SSH_USER / HOSTINGER_SSH_KEY are not configured as repo secrets. This workflow cannot run until they are." >&2
+            exit 1
+          fi
+          umask 077
+          key_file="$(mktemp)"
+          trap 'rm -f "$key_file"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key_file"
+          ssh -i "$key_file" -p "${SSH_PORT:-22}" \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=/opt/resqnet/known_hosts \
+            "$SSH_USER@$SSH_HOST" \
+            "cd /opt/resqnet/docker && RESQNET_API_IMAGE=ghcr.io/${{ github.repository }}/resqnet-api:${IMAGE_TAG} ./deploy.sh"
+          # Never echo $SSH_KEY or any part of the connection string beyond
+          # what's already visible in the workflow inputs above.
+
+      - name: HTTPS smoke test against the public domain
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 10 https://api.resqnet.co/health
+          echo "Health check passed."

@@ -3,11 +3,21 @@ import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
+import '../../core/network/backend_session_controller.dart';
 import '../../core/network/token_storage.dart';
+import '../../core/network/websocket_client.dart';
 
 class AuthService extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
+
+  AuthService() {
+    // Phase 4C: relay backendSession's own notifications as this class's
+    // notifications too, so anything watching AuthService via Provider
+    // (e.g. _AuthGate) rebuilds when backend auth state changes, not just
+    // when AuthService's own fields change.
+    backendSession.addListener(notifyListeners);
+  }
 
   User? get currentUser => _auth.currentUser;
   bool get isLoggedIn => _auth.currentUser != null;
@@ -80,39 +90,33 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  // Google Sign In
-  Future<bool> signInWithGoogle() async {
-    _isLoading = true;
-    notifyListeners();
-    try {
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) {
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-      await _auth.signInWithCredential(credential);
-      _isLoading = false;
-      notifyListeners();
-      return true;
-    } catch (e) {
-      _error = e.toString();
-      _isLoading = false;
-      notifyListeners();
-      return false;
-    }
-  }
+  // Phase 20 (Firebase removal): the old Firebase-credential Google
+  // Sign-In path (`signInWithGoogle()`, using
+  // `FirebaseAuth.signInWithCredential`) has been removed — confirmed
+  // unused anywhere in the app (login_screen.dart's Google button has
+  // called `signInWithGoogleBackend()` below since Phase 4C). Firebase
+  // Auth itself is NOT removed here — phone sign-in (below) still
+  // depends on it entirely, with no backend replacement (Phase 8/9 SMS
+  // provider system was never built).
 
   // Sign Out
   Future<void> signOut() async {
     await _auth.signOut();
     await _googleSignIn.signOut();
+    // Phase 4B: logout state synchronization — ending the Firebase
+    // session also ends any backend session, so the two never disagree
+    // about whether the user is signed in. signOutBackend() is already
+    // safe to call even when no backend session was ever established
+    // (Google login isn't cut over yet, so today this is a no-op for
+    // almost everyone) — it no-ops on a missing refresh token and always
+    // clears local tokens regardless of network outcome.
+    await signOutBackend();
+    backendSession.markSignedOut();
+    // Communication phase: a stale connection authenticated as the
+    // now-signed-out user must never keep receiving realtime events —
+    // the next sign-in (same or different account) calls
+    // CommunicationService.initialize(), which reconnects fresh.
+    ResQNetWebSocketClient.instance.disconnect();
     notifyListeners();
   }
 
@@ -132,23 +136,56 @@ class AuthService extends ChangeNotifier {
   bool _backendLoading = false;
   bool get backendLoading => _backendLoading;
 
+  /// Phase 4B: observable backend-session state (unknown / restoring /
+  /// authenticated / unauthenticated), separate from this class so it
+  /// stays unit-testable without Firebase (see backend_session_controller.dart's
+  /// doc comment). `_AuthGate` (lib/app.dart) reads this to track backend
+  /// state in parallel with Firebase — it does NOT currently change which
+  /// screen is shown; Firebase's authStateChanges() remains the sole gate
+  /// until Phase 4C/4D.
+  final BackendSessionController backendSession = BackendSessionController();
+
   Future<bool> isBackendSignedIn() async =>
       (await TokenStorage.instance.readAccessToken()) != null;
 
-  /// Signs in against the ResQNet backend using a Google ID token. Returns
-  /// true on success. Throws [ApiException] on failure (including
+  /// Phase 4A/4B session-state foundation: determines whether the backend
+  /// session is (or can be restored to be) authenticated right now —
+  /// checking the stored access token's own expiry locally first, and
+  /// falling back to exactly one refresh attempt if needed. Updates
+  /// [backendSession] as a side effect so the UI can observe the result.
+  /// Does NOT touch Firebase or change what `_AuthGate` (lib/app.dart)
+  /// gates navigation on — wiring this into the actual gate decision is
+  /// Phase 4C/4D, not this phase.
+  Future<bool> restoreBackendSession() async {
+    await backendSession.restore();
+    return backendSession.status == BackendSessionStatus.authenticated;
+  }
+
+  /// Signs in against the ResQNet backend using a Google ID token — this
+  /// is now `login_screen.dart`'s primary Google sign-in path (Phase 4C).
+  /// Never calls FirebaseAuth.signInWithCredential(); never derives
+  /// identity from a Firebase UID. Returns true on success, false if the
+  /// user cancels Google's own account picker (not an error). Throws
+  /// [ApiException] for every other failure (including
   /// [ApiException.isNetworkError] when the backend can't be reached at
-  /// all) so callers can distinguish "backend rejected this" from
-  /// "backend isn't reachable right now" rather than treating both as a
-  /// generic failure.
+  /// all) so callers can show a specific, safe message per failure mode
+  /// rather than a generic one.
   Future<bool> signInWithGoogleBackend() async {
     _backendLoading = true;
     notifyListeners();
     try {
-      final googleUser = await _googleSignIn.signIn();
+      GoogleSignInAccount? googleUser;
+      try {
+        googleUser = await _googleSignIn.signIn();
+      } catch (_) {
+        // e.g. a PlatformException from missing/misconfigured Google Play
+        // Services — a real failure, distinct from "user cancelled"
+        // (which is a null result below, not a thrown error).
+        throw ApiException.network('Google sign-in is not available right now');
+      }
       if (googleUser == null) return false;
 
-      final googleAuth = await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
       final idToken = googleAuth.idToken;
       if (idToken == null) {
         throw const ApiException(
@@ -167,6 +204,11 @@ class AuthService extends ChangeNotifier {
         accessToken: session['accessToken'] as String,
         refreshToken: session['refreshToken'] as String,
       );
+      // The backend is now authoritative for this login — mark the
+      // session directly rather than re-running restore(), which would
+      // be a redundant round trip immediately after a login that just
+      // proved the session is good.
+      backendSession.markAuthenticated();
       return true;
     } finally {
       _backendLoading = false;

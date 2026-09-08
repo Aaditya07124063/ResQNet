@@ -63,3 +63,22 @@ export async function deleteTrustedContact(ownerUserId: string, contactId: strin
     throw HttpError.notFound('Trusted contact not found');
   }
 }
+
+/**
+ * Used by the `contacts_only` profile-picture visibility rule (Phase 6).
+ * True if either user has linked the other as a trusted contact — checked
+ * in both directions since a contact relationship may only have been
+ * recorded from one side (trusted_contacts.contact_user_id is filled in
+ * only when the contact is also a ResQNet user).
+ */
+export async function isMutualTrustedContact(userIdA: string, userIdB: string): Promise<boolean> {
+  const { rows } = await pool.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM trusted_contacts
+       WHERE (owner_user_id = $1 AND contact_user_id = $2)
+          OR (owner_user_id = $2 AND contact_user_id = $1)
+     ) AS exists`,
+    [userIdA, userIdB],
+  );
+  return rows[0]?.exists ?? false;
+}

@@ -1,45 +1,45 @@
 {
   "project_info": {
-    "project_number": "349015883051",
-    "project_id": "resqnet-2024",
-    "storage_bucket": "resqnet-2024.firebasestorage.app"
+    "project_number": "427023478978",
+    "project_id": "resqnet-f955d",
+    "storage_bucket": "resqnet-f955d.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:349015883051:android:596e641dbd9d2bbc1f596e",
+        "mobilesdk_app_id": "1:427023478978:android:8f14d966949e3cd4660b5b",
         "android_client_info": {
           "package_name": "com.example.resqnet"
         }
       },
       "oauth_client": [
         {
-          "client_id": "349015883051-t3t0l3j37l9fusmlc01mpbdn94975qei.apps.googleusercontent.com",
+          "client_id": "427023478978-0e4lp0vghvab47j6btsned2k7m64jdnl.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.example.resqnet",
-            "certificate_hash": "c861a209bfd4ae91bb0cb32a01b7dedb6be3fe4d"
+            "certificate_hash": "ce1bb1c71213cacfcafc7e9cebfbeeea2550ae1c"
           }
         },
         {
-          "client_id": "349015883051-74s8h0j0vsjmr4aeimcelnjtqjcfunde.apps.googleusercontent.com",
+          "client_id": "427023478978-bgk7b0vm2krk7d0qm2ssbajj46s7t6e1.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyAKe4JRJkY6jPP6DNsuuMw31hkkwq2Qp_g"
+          "current_key": "AIzaSyBDChld7yGNSC9GeT0uTFLgdGu2VzMUVoo"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "349015883051-74s8h0j0vsjmr4aeimcelnjtqjcfunde.apps.googleusercontent.com",
+              "client_id": "427023478978-bgk7b0vm2krk7d0qm2ssbajj46s7t6e1.apps.googleusercontent.com",
               "client_type": 3
             },
             {
-              "client_id": "349015883051-hgrnu4jb5qh69odgsbnlncms01q985jg.apps.googleusercontent.com",
+              "client_id": "427023478978-1n593h8fuhrucrmn8arbab30h3o2gasb.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
                 "bundle_id": "com.example.resqnet"

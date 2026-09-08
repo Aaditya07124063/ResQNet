@@ -23,6 +23,7 @@ function signAccessToken(userId: string): { token: string; expiresAt: Date } {
   const expiresAt = new Date(Date.now() + env.JWT_ACCESS_TTL_MINUTES * 60_000);
   const token = jwt.sign({ sub: userId } satisfies AccessTokenPayload, env.JWT_ACCESS_SECRET, {
     expiresIn: `${env.JWT_ACCESS_TTL_MINUTES}m`,
+    algorithm: 'HS256',
   });
   return { token, expiresAt };
 }
@@ -52,10 +53,16 @@ export async function issueSession(
 }
 
 /** Verifies a ResQNet access token (not a refresh token) and returns the
- * authenticated user id. Used by requireAuth on every protected request. */
+ * authenticated user id. Used by requireAuth on every protected request.
+ * `algorithms: ['HS256']` is pinned explicitly (Phase 19 security audit) —
+ * defense in depth: without it, a verifier accepts whatever algorithm the
+ * token's own header claims is compatible with the key type given. Since
+ * the key here is a plain string (HMAC-only), jsonwebtoken already
+ * rejects an RS/ES-family token, but pinning removes any ambiguity rather
+ * than relying on that inference. */
 export function verifyAccessToken(token: string): string {
   try {
-    const payload = jwt.verify(token, env.JWT_ACCESS_SECRET) as AccessTokenPayload;
+    const payload = jwt.verify(token, env.JWT_ACCESS_SECRET, { algorithms: ['HS256'] }) as AccessTokenPayload;
     if (!payload.sub) throw new Error('missing sub');
     return payload.sub;
   } catch {

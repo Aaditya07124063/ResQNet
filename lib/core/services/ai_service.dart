@@ -16,26 +16,12 @@ class AiService extends ChangeNotifier {
     'English': 'en',
     'Hindi': 'hi',
     'Nepali': 'ne',
-    'Bengali': 'bn',
-    'Tamil': 'ta',
-    'Telugu': 'te',
-    'Marathi': 'mr',
-    'Gujarati': 'gu',
-    'Punjabi': 'pa',
-    'Arabic': 'ar',
   };
 
   static const Map<String, String> _speechLocales = {
     'English': 'en_US',
     'Hindi': 'hi_IN',
     'Nepali': 'ne_NP',
-    'Bengali': 'bn_IN',
-    'Tamil': 'ta_IN',
-    'Telugu': 'te_IN',
-    'Marathi': 'mr_IN',
-    'Gujarati': 'gu_IN',
-    'Punjabi': 'pa_IN',
-    'Arabic': 'ar_SA',
   };
 
   String _getLocaleId(String language) {

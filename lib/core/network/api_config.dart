@@ -1,12 +1,9 @@
 /// Backend base URL per environment.
 ///
-/// Decision (2026-09-04): the production domain is deliberately deferred
-/// until closer to app store / Play Store submission — until then, `vps`
-/// points directly at the Hostinger VPS's IP:port over plain HTTP for
-/// testing. `production` still requires a real HTTPS domain (see
-/// docs/AUDIT.md open questions) — plain-IP HTTP is fine for pre-release
-/// testing, not for a build that will ship to real users' devices, so that
-/// guard stays in place rather than being relaxed to match.
+/// Decision (2026-09-05): production is now live at https://api.resqnet.co
+/// (verified via GET /health -> {"status":"ok","env":"production"}). `vps`
+/// is kept for direct IP:port testing against the Hostinger VPS ahead of a
+/// domain being available for a given build/environment.
 enum ResQNetEnvironment { development, vps, production }
 
 class ApiConfig {
@@ -46,13 +43,22 @@ class ApiConfig {
         }
         return url;
       case ResQNetEnvironment.production:
-        throw UnsupportedError(
-          'Production backend URL is not configured yet — needs a real HTTPS '
-          'domain before shipping to real users, deliberately deferred until '
-          'closer to app store / Play Store submission. See docs/AUDIT.md.',
+        // Override with --dart-define=API_BASE_URL=... only if the
+        // production domain ever needs to change; the live backend is at
+        // https://api.resqnet.co by default.
+        return const String.fromEnvironment(
+          'API_BASE_URL',
+          defaultValue: 'https://api.resqnet.co',
         );
     }
   }
 
+  // Application routes are mounted under /api/v1 on the backend (see
+  // backend/src/app.ts: app.use('/api/v1', ..., router)) — verified
+  // directly against the running production container (2026-09-05):
+  // GET /api/v1/me -> 401 malformed-auth-header (valid route), while
+  // GET /me -> 404. /health is the one route mounted outside /api/v1 and
+  // is not fetched through this method. Callers pass a leading-slash path
+  // (e.g. '/auth/google'), so this prefixes, it doesn't just concatenate.
   static Uri resolve(String path) => Uri.parse('$baseUrl/api/v1$path');
 }

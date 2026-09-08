@@ -1,0 +1,116 @@
+@import "tailwindcss";
+
+:root {
+  /* Ink / text */
+  --color-ink: #0b1220;
+  --color-ink-soft: #47536b;
+  --color-ink-faint: #6b7686;
+
+  /* Surfaces */
+  --color-bg: #ffffff;
+  --color-bg-subtle: #f5f6f8;
+  --color-surface-dark: #0b1220;
+  --color-surface-dark-soft: #131c2e;
+  --color-border: #e2e5ea;
+  --color-border-dark: #232d42;
+
+  /* Brand — a restrained, technical teal. Red/amber are reserved for
+     literal alert states only (see --color-alert), never the theme. */
+  --color-primary: #0f6e66;
+  --color-primary-strong: #0a4f49;
+  --color-primary-soft: #e5f2f0;
+
+  /* Reserved for genuine emergency/status signaling only. */
+  --color-alert: #c4351c;
+  --color-alert-soft: #fdece9;
+  --color-warn: #a16207;
+  --color-warn-soft: #fdf4e3;
+  --color-success: #157a4a;
+  --color-success-soft: #e7f5ed;
+
+  --font-sans: var(--font-inter);
+}
+
+@theme inline {
+  --color-ink: var(--color-ink);
+  --color-ink-soft: var(--color-ink-soft);
+  --color-ink-faint: var(--color-ink-faint);
+  --color-bg: var(--color-bg);
+  --color-bg-subtle: var(--color-bg-subtle);
+  --color-surface-dark: var(--color-surface-dark);
+  --color-surface-dark-soft: var(--color-surface-dark-soft);
+  --color-border: var(--color-border);
+  --color-border-dark: var(--color-border-dark);
+  --color-primary: var(--color-primary);
+  --color-primary-strong: var(--color-primary-strong);
+  --color-primary-soft: var(--color-primary-soft);
+  --color-alert: var(--color-alert);
+  --color-alert-soft: var(--color-alert-soft);
+  --color-warn: var(--color-warn);
+  --color-warn-soft: var(--color-warn-soft);
+  --color-success: var(--color-success);
+  --color-success-soft: var(--color-success-soft);
+  --font-sans: var(--font-sans);
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Visible, high-contrast focus ring everywhere — never rely on the
+   browser default alone, and never remove it. */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Skip link — hidden until focused, first focusable element on every page. */
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -3rem;
+  z-index: 100;
+  background: var(--color-ink);
+  color: white;
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.5rem;
+  transition: top 0.15s ease;
+}
+.skip-link:focus {
+  top: 1rem;
+}
+
+/* Scroll-reveal: purely additive — content is fully visible with no JS. */
+.reveal {
+  opacity: 1;
+  transform: none;
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .reveal {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  .reveal-visible {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
