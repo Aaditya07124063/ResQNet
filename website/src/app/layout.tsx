@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   description: siteConfig.description,
   applicationName: siteConfig.name,
   icons: {
-    icon: "/favicon.svg",
+    icon: "/favicon.png",
   },
   manifest: "/site.webmanifest",
   robots: {
