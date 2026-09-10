@@ -1,17 +1,81 @@
-# resqnet
+# ResQNet — Offline Emergency Communication
 
-A new Flutter project.
+**Official website:**https://resqnet.co/**
 
-## Getting Started
+ResQNet is an offline emergency communication platform designed to help people communicate and coordinate when internet or mobile networks are unavailable.
 
-This project is a starting point for a Flutter application.
+It uses nearby smartphones and decentralized Bluetooth/Wi-Fi Direct communication to support emergency messaging, SOS alerts, location sharing, and disaster coordination.
 
-A few resources to get you started if this is your first Flutter project:
+## Mission
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+ResQNet is built for civilians in disasters and low-connectivity environments, including:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+- People affected by natural disasters
+- Rural and disaster-prone communities
+- Trekkers, hikers, and mountain travelers
+- Tourists and forest workers
+- People who become stranded or lost without network coverage
+
+The platform can also support rescue teams, responders, NGOs, and local authorities during emergency coordination.
+
+## How It Works
+
+When conventional communication infrastructure is unavailable, nearby smartphones can form a decentralized mesh network.
+
+```text
+Nearby Smartphones
+        ↓
+Bluetooth / Wi-Fi Direct
+        ↓
+Decentralized Emergency Mesh
+        ↓
+SOS • Messages • Location • Coordination
+## Core Features
+
+- **Offline emergency communication** using nearby devices
+- **SOS alerts** for emergency situations
+- **Location sharing** with trusted contacts and nearby peers
+- **Decentralized mesh communication**
+- **Emergency and disaster coordination**
+- **Resilient communication** for low-connectivity environments
+- **Situational awareness** using earthquake information and peer hazard reports
+
+## Technology
+
+The mobile application is built with Flutter.
+
+The project includes:
+
+- Flutter / Dart
+- Bluetooth and Wi-Fi Direct based communication
+- Offline-first emergency networking
+- Backend APIs
+- PostgreSQL
+- JWT-based authentication
+- MinIO object storage
+
+## Project Status
+
+ResQNet is under active development.
+
+The project is focused on building reliable emergency communication capabilities for situations where conventional internet and mobile networks may fail.
+
+## Official Links
+
+- **Website:** https://resqnet.co/
+- **API:** https://api.resqnet.co/
+- **Source Code:** https://github.com/Aaditya07124063/ResQNet
+
+## Important
+
+ResQNet is an emergency communication and coordination project. It is not a replacement for official emergency services, professional rescue organizations, or public safety infrastructure.
+
+---
+
+## Development
+
+This repository contains the ResQNet Flutter application and related project components.
+
+For project information, features, architecture, and current capabilities, visit the official website:
+
+**https://resqnet.co/**
