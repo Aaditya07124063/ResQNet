@@ -3,6 +3,9 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/models/emergency_message.dart';
+import '../../core/models/emergency_outbox_entry.dart';
+import '../../core/services/sos_service.dart';
+import '../sos/sos_status.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/services/ai_service.dart';
@@ -35,33 +38,108 @@ class SosHistoryScreen extends StatefulWidget {
 class _SosHistoryScreenState extends State<SosHistoryScreen> {
   late Future<List<_HistoryEntry>> _future;
 
+  /// Shown above the list when the server copy could not be loaded but
+  /// this device's own records could.
+  String? _notice;
+
   @override
   void initState() {
     super.initState();
     _future = _load();
   }
 
+  /// This device's own SOS records (available offline) merged with the
+  /// server's history, one row per event id.
   Future<List<_HistoryEntry>> _load() async {
     final ai = context.read<AiService>();
-    final response = await ApiClient.instance.get('/sos', auth: true);
-    final events = (response['events'] as List).cast<Map<String, dynamic>>();
-    return events.map((e) {
-      final message = (e['message'] as String?) ?? '';
+    final local = await context.read<SosService>().localHistory();
+
+    List<Map<String, dynamic>> remote = const [];
+    String? notice;
+    try {
+      final response = await ApiClient.instance.get('/sos', auth: true);
+      remote = (response['events'] as List).cast<Map<String, dynamic>>();
+    } on ApiException catch (e) {
+      if (local.isEmpty) rethrow;
+      notice = e.isNetworkError
+          ? 'Offline — showing SOS alerts stored on this phone.'
+          : 'Could not load your full history from the server — showing SOS alerts stored on this phone.';
+    }
+    if (mounted) setState(() => _notice = notice);
+
+    EmergencyMessage toMessage(String id, String? text, double? lat, double? lng, DateTime at) {
+      final message = text ?? '';
       final type = ai.classifyEmergency(message);
-      final priority = ai.assessPriority(message, type);
-      final msg = EmergencyMessage(
-        id: e['id'] as String,
+      return EmergencyMessage(
+        id: id,
         senderId: '',
         senderName: '',
         message: message,
         type: type,
-        priority: priority,
-        latitude: (e['latitude'] as num?)?.toDouble(),
-        longitude: (e['longitude'] as num?)?.toDouble(),
-        timestamp: DateTime.parse(e['clientCreatedAt'] as String),
+        priority: ai.assessPriority(message, type),
+        latitude: lat,
+        longitude: lng,
+        timestamp: at,
       );
-      return _HistoryEntry(msg, e['status'] as String, e['originVerificationState'] as String?);
-    }).toList();
+    }
+
+    final localById = {for (final entry in local) entry.eventId: entry};
+    final entries = <_HistoryEntry>[];
+    final seen = <String>{};
+    for (final e in remote) {
+      final eventId = (e['eventId'] as String?) ?? (e['id'] as String);
+      seen.add(eventId);
+      final localEntry = localById[eventId];
+      entries.add(_HistoryEntry(
+        toMessage(eventId, e['message'] as String?, (e['latitude'] as num?)?.toDouble(),
+            (e['longitude'] as num?)?.toDouble(), DateTime.parse(e['clientCreatedAt'] as String)),
+        e['status'] as String,
+        e['originVerificationState'] as String?,
+        detail: localEntry != null && localEntry.isResolved ? describeResolution(localEntry) : null,
+      ));
+    }
+    for (final entry in local) {
+      if (seen.contains(entry.eventId)) continue;
+      entries.add(_HistoryEntry(
+        toMessage(entry.eventId, entry.message, entry.latitude, entry.longitude, entry.createdAt),
+        _localStatus(entry),
+        null,
+        detail: entry.isResolved ? describeResolution(entry) : _localDetail(entry),
+      ));
+    }
+    entries.sort((a, b) => b.message.timestamp.compareTo(a.message.timestamp));
+    return entries;
+  }
+
+  String _localStatus(EmergencyOutboxEntry entry) {
+    if (entry.resolution == SosResolution.falseAlarm) return 'false alarm';
+    if (entry.isResolved) return 'resolved';
+    switch (entry.state) {
+      case OutboxEntryState.serverAccepted:
+      case OutboxEntryState.deliveryConfirmed:
+        return 'sent';
+      case OutboxEntryState.failed:
+        return 'not accepted';
+      case OutboxEntryState.expired:
+        return 'expired';
+      default:
+        return 'waiting to send';
+    }
+  }
+
+  String? _localDetail(EmergencyOutboxEntry entry) {
+    final peers = entry.sentToPeerIds.length;
+    final mesh = peers > 0 ? 'Handed to $peers nearby device${peers == 1 ? '' : 's'} over the mesh. ' : '';
+    switch (entry.state) {
+      case OutboxEntryState.failed:
+      case OutboxEntryState.expired:
+        return '${mesh}Not recorded by the ResQNet server.';
+      case OutboxEntryState.serverAccepted:
+      case OutboxEntryState.deliveryConfirmed:
+        return mesh.isEmpty ? null : mesh.trim();
+      default:
+        return '${mesh}Will be sent to the server when online.';
+    }
   }
 
   Future<void> _refresh() async {
@@ -149,8 +227,23 @@ class _SosHistoryScreenState extends State<SosHistoryScreen> {
             onRefresh: _refresh,
             child: ListView.builder(
               padding: const EdgeInsets.all(16),
-              itemCount: entries.length,
-              itemBuilder: (_, i) {
+              itemCount: entries.length + (_notice != null ? 1 : 0),
+              itemBuilder: (_, index) {
+                if (_notice != null && index == 0) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.cloud_off, color: AppColors.warningAmber, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(_notice!, style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                final i = _notice != null ? index - 1 : index;
                 final msg = entries[i].message;
                 final status = entries[i].status;
 
@@ -164,7 +257,7 @@ class _SosHistoryScreenState extends State<SosHistoryScreen> {
                     children: [
                       Container(
                         width: 4,
-                        height: 90,
+                        height: 110,
                         decoration: BoxDecoration(
                           color: msg.priorityColor,
                           borderRadius: const BorderRadius.only(
@@ -194,15 +287,16 @@ class _SosHistoryScreenState extends State<SosHistoryScreen> {
                                     ),
                                   ),
                                   Container(
+                                    constraints: const BoxConstraints(maxWidth: 140),
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 8, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: msg.priorityColor.withOpacity(0.15),
+                                      color: msg.priorityColor.withValues(alpha: 0.15),
                                       borderRadius:
                                           BorderRadius.circular(8),
                                       border: Border.all(
                                           color: msg.priorityColor
-                                              .withOpacity(0.5)),
+                                              .withValues(alpha: 0.5)),
                                     ),
                                     child: Text(
                                       status.toUpperCase(),
@@ -250,6 +344,12 @@ class _SosHistoryScreenState extends State<SosHistoryScreen> {
                                   ],
                                 ],
                               ),
+                              if (entries[i].detail != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(entries[i].detail!,
+                                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                                ),
                               Builder(builder: (context) {
                                 final tier = trustTierForBackendRecord(entries[i].originVerificationState);
                                 if (tier == null) return const SizedBox.shrink();
@@ -289,7 +389,10 @@ class _HistoryEntry {
   /// as verified). Displayed precisely, never collapsed into a generic
   /// "verified" badge — see trustTierForBackendRecord()/TrustTierBadge.
   final String? originVerificationState;
-  _HistoryEntry(this.message, this.status, this.originVerificationState);
+
+  /// Delivery/cancellation detail from this device's own records.
+  final String? detail;
+  _HistoryEntry(this.message, this.status, this.originVerificationState, {this.detail});
 }
 
 // The trust badge itself now lives in widgets/trust_tier_badge.dart

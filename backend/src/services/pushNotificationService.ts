@@ -124,7 +124,10 @@ export async function notifySeismicCorroboration(input: SeismicCorroborationAler
   await notifyAllOtherActiveUsers(null, {
     title: '🌍 Possible earthquake detected',
     body: `Corroborated by ${input.deviceCount} ResQNet devices in the area.`,
+    androidChannelId: 'resqnet_alerts',
+    highPriority: true,
     data: {
+      type: 'earthquake_corroborated',
       latitude: String(input.latitude),
       longitude: String(input.longitude),
       deviceCount: String(input.deviceCount),

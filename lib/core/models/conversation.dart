@@ -30,14 +30,25 @@ class ConversationSummary {
   final String id;
   final String? otherParticipantId;
   final String? otherParticipantName;
+
+  /// Set for group conversations (group chat).
+  final String? groupId;
+  final String? groupName;
   final ConversationLastMessage? lastMessage;
   final int unreadCount;
   final DateTime updatedAt;
+
+  bool get isGroup => groupId != null;
+
+  /// What to show as the conversation's title.
+  String get title => groupName ?? otherParticipantName ?? 'ResQNet user';
 
   const ConversationSummary({
     required this.id,
     required this.otherParticipantId,
     required this.otherParticipantName,
+    this.groupId,
+    this.groupName,
     required this.lastMessage,
     required this.unreadCount,
     required this.updatedAt,
@@ -45,11 +56,14 @@ class ConversationSummary {
 
   factory ConversationSummary.fromJson(Map<String, dynamic> json) {
     final other = json['otherParticipant'] as Map<String, dynamic>?;
+    final group = json['group'] as Map<String, dynamic>?;
     final lastMessageJson = json['lastMessage'] as Map<String, dynamic>?;
     return ConversationSummary(
       id: json['id'] as String,
       otherParticipantId: other?['id'] as String?,
       otherParticipantName: other?['displayName'] as String?,
+      groupId: group?['id'] as String?,
+      groupName: group?['name'] as String?,
       lastMessage: lastMessageJson != null ? ConversationLastMessage.fromJson(lastMessageJson) : null,
       unreadCount: json['unreadCount'] as int? ?? 0,
       updatedAt: DateTime.parse(json['updatedAt'] as String),

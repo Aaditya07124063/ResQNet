@@ -49,6 +49,15 @@ export interface PushNotificationContent {
   title: string;
   body: string;
   data?: Record<string, string>;
+  /** Android notification channel the ResQNet app registers (e.g.
+   * 'resqnet_sos'); the app's manifest default channel is used if unset. */
+  androidChannelId?: string;
+  /** Emergency pushes are delivered with high priority; everything else
+   * uses the platforms' normal priority so it is not treated as urgent. */
+  highPriority?: boolean;
+  /** Display slot: a later push (or the app's own mesh notification) with
+   * the same tag replaces this one instead of stacking a duplicate. */
+  tag?: string;
 }
 
 export interface TokenSendResult {
@@ -106,6 +115,23 @@ export async function sendMulticast(tokens: string[], content: PushNotificationC
       const response = await getMessaging(firebaseApp).sendEachForMulticast({
         notification: { title: content.title, body: content.body },
         data: content.data,
+        android: {
+          priority: content.highPriority ? 'high' : 'normal',
+          ...(content.androidChannelId || content.tag
+            ? {
+                notification: {
+                  ...(content.androidChannelId ? { channelId: content.androidChannelId } : {}),
+                  ...(content.tag ? { tag: content.tag } : {}),
+                },
+              }
+            : {}),
+        },
+        apns: {
+          headers: {
+            'apns-priority': content.highPriority ? '10' : '5',
+            ...(content.tag ? { 'apns-collapse-id': content.tag } : {}),
+          },
+        },
         tokens: tokenChunk,
       });
       results.push(...toTokenResults(tokenChunk, response.responses));

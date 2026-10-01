@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../security/alert_signature.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -9,7 +10,8 @@ import '../models/emergency_message.dart';
 /// from message content; always set explicitly by whichever code path
 /// constructs the [Hazard] (HazardService.createHazard for a peer's own
 /// report, GovernmentAlertFeedService for an official feed).
-enum HazardSource { peerReported, officialFeed }
+// New values go at the end: the enum is persisted by name.
+enum HazardSource { peerReported, officialFeed, verifiedPartner, resqnetSystem, internationalPublic }
 
 /// How serious this hazard is, per the REPORTER's own assessment — not an
 /// independently verified severity. Kept as a small fixed enum (validated
@@ -57,6 +59,33 @@ class Hazard {
   final HazardStatus status;
   final String reporter;
 
+  /// The source a mesh-relayed hazard CLAIMED (e.g. 'officialFeed'). Mesh
+  /// hazards are unsigned, so such a claim is never trusted: the hazard is
+  /// stored as [HazardSource.peerReported] and the claim kept only so the
+  /// UI can say "claims to be official — unverified".
+  final String? claimedSource;
+
+  /// The server-signed alert this hazard was built from (GET /alerts), kept
+  /// so phones that receive it over the mesh can verify it themselves.
+  final Map<String, dynamic>? signedAlert;
+
+  /// How the app presents where this hazard came from. Only hazards the app
+  /// fetched itself from the ResQNet server can be official.
+  String get sourceLabel {
+    switch (source) {
+      case HazardSource.officialFeed:
+        return 'OFFICIAL';
+      case HazardSource.verifiedPartner:
+        return 'VERIFIED PARTNER';
+      case HazardSource.resqnetSystem:
+        return 'RESQNET';
+      case HazardSource.internationalPublic:
+        return 'PUBLIC INTERNATIONAL SOURCE';
+      case HazardSource.peerReported:
+        return claimedSource != null ? 'COMMUNITY REPORT · claims official, unverified' : 'COMMUNITY REPORT';
+    }
+  }
+
   Hazard({
     required this.id,
     this.source = HazardSource.peerReported,
@@ -72,6 +101,8 @@ class Hazard {
     this.confidence = 1.0,
     this.status = HazardStatus.active,
     required this.reporter,
+    this.claimedSource,
+    this.signedAlert,
   })  : observedAt = observedAt ?? publishedAt ?? DateTime.now(),
         publishedAt = publishedAt ?? observedAt ?? DateTime.now(),
         expiresAt = expiresAt ?? (publishedAt ?? observedAt ?? DateTime.now()).add(const Duration(hours: 24));
@@ -98,6 +129,8 @@ class Hazard {
         'confidence': confidence,
         'status': status.name,
         'reporter': reporter,
+        if (claimedSource != null) 'claimedSource': claimedSource,
+        if (signedAlert != null) 'signedAlert': signedAlert,
         // Retained for exact wire-compatibility with any peer still
         // running a pre-Phase-H build of this app, which only understands
         // this one field for recency.
@@ -164,6 +197,48 @@ class Hazard {
       confidence: (json['confidence'] as num?)?.toDouble().clamp(0.0, 1.0) ?? 1.0,
       status: parseEnum(HazardStatus.values, json['status'], HazardStatus.active),
       reporter: json['reporter'] as String? ?? 'Unknown',
+      claimedSource: json['claimedSource'] as String?,
+      signedAlert: json['signedAlert'] is Map<String, dynamic> ? json['signedAlert'] as Map<String, dynamic> : null,
+    );
+  }
+
+  /// Builds a map hazard from a ResQNet server alert (GET /api/v1/alerts).
+  /// The label comes only from the alert's `sourceType`. Returns null for
+  /// alerts without coordinates (area-only alerts cannot be drawn as a point).
+  static Hazard? fromServerAlert(Map<String, dynamic> alert, {String idPrefix = 'alert:'}) {
+    final id = alert['id'];
+    final area = alert['area'];
+    if (id is! String || area is! Map) return null;
+    final lat = (area['latitude'] as num?)?.toDouble();
+    final lng = (area['longitude'] as num?)?.toDouble();
+    if (lat == null || lng == null) return null;
+    final source = switch (alert['sourceType']) {
+      'official' => HazardSource.officialFeed,
+      'verified_partner' => HazardSource.verifiedPartner,
+      'resqnet_system' => HazardSource.resqnetSystem,
+      'international_public' => HazardSource.internationalPublic,
+      _ => HazardSource.peerReported,
+    };
+    final issued = DateTime.tryParse(alert['issuedAt'] as String? ?? '') ?? DateTime.now();
+    final expires =
+        DateTime.tryParse(alert['expiresAt'] as String? ?? '') ?? DateTime.now().add(const Duration(hours: 24));
+    final radiusKm = (area['radiusKm'] as num?)?.toDouble();
+    final title = alert['title'] as String? ?? '';
+    final body = alert['body'] as String? ?? '';
+    return Hazard(
+      id: '$idPrefix$id',
+      source: source,
+      type: _hazardTypeForCategory[alert['category']] ?? 'other',
+      severity: _hazardSeverityFor[alert['severity']] ?? HazardSeverity.moderate,
+      description: body.isEmpty ? title : '$title — $body',
+      latitude: lat,
+      longitude: lng,
+      radiusM: radiusKm != null ? radiusKm * 1000 : null,
+      observedAt: issued,
+      publishedAt: issued,
+      expiresAt: expires,
+      reporter: alert['sourceName'] as String? ?? 'ResQNet server',
+      signedAlert: alert['signature'] is String ? alert : null,
     );
   }
 
@@ -241,7 +316,32 @@ class Hazard {
   }
 }
 
+const _hazardTypeForCategory = {
+  'flood': 'flood',
+  'wildfire': 'fire',
+  'landslide': 'landslide',
+  'road_closure': 'road_blocked',
+  'earthquake': 'earthquake',
+  'avalanche': 'avalanche',
+  'storm': 'storm',
+  'evacuation': 'evacuation',
+  'health': 'health',
+};
+
+const _hazardSeverityFor = {
+  'info': HazardSeverity.low,
+  'advisory': HazardSeverity.low,
+  'watch': HazardSeverity.moderate,
+  'warning': HazardSeverity.high,
+  'emergency': HazardSeverity.severe,
+};
+
 class HazardService extends ChangeNotifier {
+  HazardService({@visibleForTesting String? alertPublicKeyPem}) : _alertPublicKeyPem = alertPublicKeyPem;
+
+  /// Overrides the build-time pinned alert key (tests only).
+  final String? _alertPublicKeyPem;
+
   static const _storageKey = 'hazards';
   static const hazardPrefix = 'HAZARD|';
 
@@ -352,8 +452,10 @@ class HazardService extends ChangeNotifier {
       if (!m.message.startsWith(hazardPrefix)) continue;
       try {
         final json = jsonDecode(m.message.substring(hazardPrefix.length)) as Map<String, dynamic>;
-        final h = Hazard.fromJson(json);
-        if (h != null && !_hazards.containsKey(h.id) && !h.isExpired) {
+        final h = _hazardFromMesh(json);
+        if (h == null || h.isExpired) continue;
+        final existing = _hazards[h.id];
+        if (existing == null || _isNewerSignedVersion(h, existing)) {
           _hazards[h.id] = h;
           added = true;
         }
@@ -363,6 +465,36 @@ class HazardService extends ChangeNotifier {
       notifyListeners();
       _persist();
     }
+  }
+
+  /// A hazard received over the mesh keeps a source label only if it
+  /// carries a server-signed alert that verifies against the pinned key; it
+  /// is then rebuilt entirely from the signed alert (nothing else in the
+  /// relayed copy is trusted). Everything else is a community report,
+  /// whatever it claims.
+  Hazard? _hazardFromMesh(Map<String, dynamic> json) {
+    final signed = json['signedAlert'];
+    if (signed is Map<String, dynamic> &&
+        verifyServerAlert(signed, publicKeyPem: _alertPublicKeyPem) &&
+        json['id'] == 'alert:${signed['id']}') {
+      return Hazard.fromServerAlert(signed);
+    }
+    final claimed = json['source'];
+    json.remove('signedAlert');
+    if (claimed != HazardSource.peerReported.name) {
+      json['source'] = HazardSource.peerReported.name;
+      if (claimed is String) json['claimedSource'] = claimed;
+    }
+    return Hazard.fromJson(json);
+  }
+
+  /// Replay protection: a verified signed alert replaces a stored one only
+  /// when its signed `updatedAt` is newer.
+  bool _isNewerSignedVersion(Hazard incoming, Hazard existing) {
+    final incomingAt = DateTime.tryParse(incoming.signedAlert?['updatedAt'] as String? ?? '');
+    if (incomingAt == null) return false;
+    final existingAt = DateTime.tryParse(existing.signedAlert?['updatedAt'] as String? ?? '');
+    return existingAt == null ? existing.source == HazardSource.peerReported : incomingAt.isAfter(existingAt);
   }
 
   Future<void> removeHazard(String id) async {

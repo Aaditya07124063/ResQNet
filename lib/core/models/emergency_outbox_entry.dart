@@ -47,6 +47,39 @@ enum OutboxEntryState {
   /// Passed its own TTL (`expiresAt`) before ever reaching the backend —
   /// terminal; must not continue being relayed or retried.
   expired,
+
+  /// The user cancelled the SOS before the backend ever accepted it —
+  /// terminal. It is deliberately never uploaded afterwards: uploading a
+  /// withdrawn SOS would alert trusted contacts about an emergency that no
+  /// longer exists. Nearby devices that already received it over mesh are
+  /// told through a mesh cancellation notice instead.
+  cancelledBeforeUpload,
+}
+
+/// How the user ended an SOS. Mirrors the backend's terminal
+/// `sos_events.status` values ('resolved' | 'false_alarm').
+enum SosResolution { resolved, falseAlarm }
+
+extension SosResolutionApi on SosResolution {
+  String get apiValue => this == SosResolution.resolved ? 'resolved' : 'false_alarm';
+}
+
+/// Whether the backend has been told about the user's cancellation.
+/// Kept explicit so the UI never claims a remote cancellation that has
+/// not actually happened.
+enum ResolutionSyncState {
+  /// Nothing to sync (SOS still active).
+  none,
+
+  /// Recorded locally; waiting to reach the backend.
+  pending,
+
+  /// The backend accepted the status change.
+  synced,
+
+  /// The backend never had this SOS (cancelled before upload), so there is
+  /// nothing to update remotely.
+  notNeeded,
 }
 
 /// A durable record of one emergency event as it moves through local
@@ -118,9 +151,31 @@ class EmergencyOutboxEntry {
     this.lastError,
     this.sentToPeerIds = const [],
     this.serverOriginVerificationState,
+    this.resolution,
+    this.resolvedAt,
+    this.resolutionSync = ResolutionSyncState.none,
+    this.mayHaveReachedServer = false,
   });
 
-  bool get isTerminal => state == OutboxEntryState.failed || state == OutboxEntryState.expired || state == OutboxEntryState.serverAccepted || state == OutboxEntryState.deliveryConfirmed;
+  /// Set once the user cancels this SOS; null while it is still active.
+  final SosResolution? resolution;
+  final DateTime? resolvedAt;
+  final ResolutionSyncState resolutionSync;
+
+  /// True once any upload attempt ended in a way that could have delivered
+  /// the event (a response, a timeout, a dropped connection). While false,
+  /// every attempt failed before connecting, so the backend has certainly
+  /// never seen this SOS.
+  final bool mayHaveReachedServer;
+
+  bool get isResolved => resolution != null;
+
+  bool get isTerminal =>
+      state == OutboxEntryState.failed ||
+      state == OutboxEntryState.expired ||
+      state == OutboxEntryState.serverAccepted ||
+      state == OutboxEntryState.deliveryConfirmed ||
+      state == OutboxEntryState.cancelledBeforeUpload;
 
   bool get isExpired => expiresAt != null && DateTime.now().isAfter(expiresAt!);
 
@@ -131,6 +186,10 @@ class EmergencyOutboxEntry {
     String? lastError,
     List<String>? sentToPeerIds,
     String? serverOriginVerificationState,
+    SosResolution? resolution,
+    DateTime? resolvedAt,
+    ResolutionSyncState? resolutionSync,
+    bool? mayHaveReachedServer,
   }) =>
       EmergencyOutboxEntry(
         eventId: eventId,
@@ -149,6 +208,10 @@ class EmergencyOutboxEntry {
         lastError: lastError ?? this.lastError,
         sentToPeerIds: sentToPeerIds ?? this.sentToPeerIds,
         serverOriginVerificationState: serverOriginVerificationState ?? this.serverOriginVerificationState,
+        resolution: resolution ?? this.resolution,
+        resolvedAt: resolvedAt ?? this.resolvedAt,
+        resolutionSync: resolutionSync ?? this.resolutionSync,
+        mayHaveReachedServer: mayHaveReachedServer ?? this.mayHaveReachedServer,
       );
 
   Map<String, dynamic> toJson() => {
@@ -168,6 +231,10 @@ class EmergencyOutboxEntry {
         'lastError': lastError,
         'sentToPeerIds': sentToPeerIds,
         'serverOriginVerificationState': serverOriginVerificationState,
+        'resolution': resolution?.name,
+        'resolvedAt': resolvedAt?.toIso8601String(),
+        'resolutionSync': resolutionSync.name,
+        'mayHaveReachedServer': mayHaveReachedServer,
       };
 
   factory EmergencyOutboxEntry.fromJson(Map<String, dynamic> json) => EmergencyOutboxEntry(
@@ -192,5 +259,14 @@ class EmergencyOutboxEntry {
         lastError: json['lastError'] as String?,
         sentToPeerIds: (json['sentToPeerIds'] as List?)?.cast<String>() ?? const [],
         serverOriginVerificationState: json['serverOriginVerificationState'] as String?,
+        resolution: SosResolution.values.where((r) => r.name == json['resolution']).firstOrNull,
+        resolvedAt: json['resolvedAt'] != null ? DateTime.parse(json['resolvedAt'] as String) : null,
+        resolutionSync: ResolutionSyncState.values.firstWhere(
+          (s) => s.name == json['resolutionSync'],
+          orElse: () => ResolutionSyncState.none,
+        ),
+        // Entries persisted before this field existed are assumed to have
+        // possibly reached the server (the safe assumption for cancelling).
+        mayHaveReachedServer: json['mayHaveReachedServer'] as bool? ?? (json['attempts'] as int? ?? 0) > 0,
       );
 }

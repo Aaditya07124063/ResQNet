@@ -1,12 +1,23 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
-    id("com.google.gms.google-services")
 }
 
+// Release signing comes from android/key.properties (git-ignored; see
+// https://docs.flutter.dev/deployment/android#sign-the-app). Without it,
+// release builds fall back to the debug key: fine for local testing, but
+// such an APK/AAB cannot be published.
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("key.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+val hasReleaseKeystore = keystoreProperties.getProperty("storeFile") != null
+
 android {
-    namespace = "com.example.resqnet"
+    namespace = "com.resqnet.app"
     compileSdk = 36
     ndkVersion = "28.2.13676358"
 
@@ -21,7 +32,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.resqnet"
+        applicationId = "com.resqnet.app"
         minSdk = flutter.minSdkVersion
         targetSdk = 36
         versionCode = flutter.versionCode
@@ -30,9 +41,20 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (hasReleaseKeystore) "release" else "debug")
         }
     }
 }
@@ -44,7 +66,6 @@ flutter {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.22")
-    implementation(platform("com.google.firebase:firebase-bom:33.1.0"))
 
     // Instrumented (on-device/emulator) tests for DeviceKeyPlugin's real
     // Android Keystore behavior — plain JVM unit tests can't exercise

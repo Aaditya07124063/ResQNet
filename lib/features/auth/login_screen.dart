@@ -8,6 +8,8 @@ import '../../core/network/api_exception.dart';
 import '../../core/services/app_shortcut_service.dart';
 import 'auth_service.dart';
 import 'otp_screen.dart';
+import 'phone_otp_mode.dart';
+import '../emergency/emergency_access_screen.dart';
 
 /// Public policy pages already published for the product — reused here
 /// rather than inventing in-app legal content (none exists in the app
@@ -56,22 +58,14 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     final auth = context.read<AuthService>();
     final phone = '$_selectedCountryCode${_phoneCtrl.text.trim()}';
-    await auth.sendOtp(
-      phoneNumber: phone,
-      onCodeSent: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => OtpScreen(phoneNumber: phone),
-          ),
-        );
-      },
-      onError: (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e)),
-        );
-      },
-    );
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    try {
+      await auth.sendOtpBackend(phone);
+      navigator.push(MaterialPageRoute(builder: (_) => OtpScreen(phoneNumber: phone)));
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(describeOtpSendError(e))));
+    }
   }
 
   Future<void> _googleSignIn() async {
@@ -82,9 +76,8 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
     final auth = context.read<AuthService>();
-    // Phase 4C: this now authenticates against the ResQNet backend
-    // (POST /auth/google) rather than FirebaseAuth.signInWithCredential().
-    // Phone login below is unchanged and still Firebase-based.
+    // Authenticates against the ResQNet backend (POST /auth/google), like
+    // phone sign-in above (POST /auth/phone/*).
     try {
       final success = await auth.signInWithGoogleBackend();
       if (success && mounted) {
@@ -151,6 +144,9 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     _shortcutService.consume();
     setState(() => _cameFromSosShortcut = true);
+    // SOS never waits for sign-in: open the no-account SOS screen (its
+    // button still starts the cancellable countdown).
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const EmergencyAccessScreen()));
   }
 
   @override
@@ -175,7 +171,29 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 28),
+              const SizedBox(height: 12),
+              // SOS must never depend on having an account or a connection.
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  key: const Key('login-emergency-sos'),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const EmergencyAccessScreen()),
+                  ),
+                  icon: const Icon(Icons.emergency, color: Colors.white),
+                  label: const Text(
+                    'Emergency SOS — no sign-in needed',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFB71C1C),
+                    minimumSize: const Size.fromHeight(56),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
               // Logo — the one place brand red stays as a solid fill;
               // everything else on this screen reads it as an accent,
               // not the dominant color (see below).
@@ -381,7 +399,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: auth.isLoading ? null : _sendOtp,
+                  onPressed: auth.isLoading || auth.backendLoading ? null : _sendOtp,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.emergencyRed,
                     disabledBackgroundColor:
@@ -389,7 +407,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: auth.isLoading
+                  child: auth.isLoading || auth.backendLoading
                       ? const SizedBox(
                           width: 22,
                           height: 22,

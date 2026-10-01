@@ -307,6 +307,34 @@ class SensorRecorderService extends ChangeNotifier {
     ));
   }
 
+  /// ResQNet operational policy: recordings contain GPS positions, so they
+  /// are kept on the device for at most this long (the user can delete
+  /// them sooner). Copies written for the share sheet are transient.
+  static const sessionRetention = Duration(days: 30);
+  static const shareCopyRetention = Duration(days: 1);
+
+  /// Deletes files in [dir] last modified at or before [now] - [maxAge].
+  /// Returns how many were deleted. Missing directory → 0.
+  static Future<int> pruneFilesOlderThan(Directory dir, Duration maxAge, {DateTime? now}) async {
+    if (!await dir.exists()) return 0;
+    final cutoff = (now ?? DateTime.now()).subtract(maxAge);
+    var deleted = 0;
+    await for (final entity in dir.list()) {
+      if (entity is! File) continue;
+      final modified = await entity.lastModified();
+      if (!modified.isAfter(cutoff)) {
+        await entity.delete();
+        deleted++;
+      }
+    }
+    return deleted;
+  }
+
+  /// Applies [sessionRetention] and [shareCopyRetention]. Called at app start.
+  Future<int> pruneExpiredRecordings() async =>
+      await pruneFilesOlderThan(await _sessionsDir(), sessionRetention) +
+      await pruneFilesOlderThan(await _shareCacheDir(), shareCopyRetention);
+
   Future<void> deleteSession(String sessionId) async {
     final dir = await _sessionsDir();
     for (final ext in ['.json', '.csv']) {

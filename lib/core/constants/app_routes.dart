@@ -4,4 +4,5 @@ class AppRoutes {
   static const String mesh = '/mesh';
   static const String map = '/map';
   static const String dashboard = '/dashboard';
+  static const String employeePortal = '/employee';
 }

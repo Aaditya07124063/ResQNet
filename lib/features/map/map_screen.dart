@@ -68,6 +68,26 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _downloadCurrentArea() async {
+    if (!allowsBulkDownload(_tileProvider)) {
+      // The default tile server forbids offline/bulk downloads; offering
+      // the button anyway would get the app's map traffic blocked.
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Offline map download unavailable'),
+          content: const Text(
+            'This build uses the public OpenStreetMap tile server, which does not allow '
+            'downloading maps for offline use. Areas you have already viewed stay cached. '
+            'Offline downloads will be enabled once ResQNet is configured with a licensed '
+            'map source.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('OK')),
+          ],
+        ),
+      );
+      return;
+    }
     if (_currentPosition == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Waiting for GPS location...')),
@@ -300,7 +320,7 @@ class _MapScreenState extends State<MapScreen> {
           )),
       ...hazardService.hazards.map((h) => _NearbyItem(
             title: h.typeLabel,
-            subtitle: h.description.isNotEmpty ? h.description : h.reporter,
+            subtitle: '${h.sourceLabel} · ${h.description.isNotEmpty ? h.description : h.reporter}',
             latitude: h.latitude,
             longitude: h.longitude,
             icon: h.icon,
@@ -488,7 +508,7 @@ class _MapScreenState extends State<MapScreen> {
                             child: GestureDetector(
                               onTap: () => _showMessagePopup(
                                   '${h.typeLabel}${h.description.isNotEmpty ? ': ${h.description}' : ''}',
-                                  h.reporter,
+                                  '${h.sourceLabel} · ${h.reporter}',
                                   h.latitude,
                                   h.longitude),
                               child: Icon(h.icon, color: h.color, size: 36),

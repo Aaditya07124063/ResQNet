@@ -23,7 +23,9 @@ import '../network/websocket_client.dart';
 /// once, per message) makes a retried send idempotent server-side — see
 /// messageService.ts's own uq_messages_conversation_client_id handling.
 class CommunicationService extends ChangeNotifier {
-  static const _outboxKey = 'resqnet_pending_messages_v1';
+  /// Unsent chat messages of the signed-in user. Removed on sign-out
+  /// (AuthService) so they are never sent under the next user's session.
+  static const outboxKey = 'resqnet_pending_messages_v1';
 
   List<ConversationSummary> _conversations = [];
   final Map<String, List<Message>> _messagesByConversation = {};
@@ -248,6 +250,14 @@ class CommunicationService extends ChangeNotifier {
     }
   }
 
+  /// Drops unsent chat messages on this device (memory and disk).
+  Future<void> clearLocalOutbox() async {
+    _pendingOutbox.clear();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(outboxKey);
+    notifyListeners();
+  }
+
   Future<void> _persistOutbox() async {
     final prefs = await SharedPreferences.getInstance();
     final encoded = jsonEncode(_pendingOutbox
@@ -263,12 +273,12 @@ class CommunicationService extends ChangeNotifier {
               'deliveryState': m.deliveryState.name,
             })
         .toList());
-    await prefs.setString(_outboxKey, encoded);
+    await prefs.setString(outboxKey, encoded);
   }
 
   Future<void> _loadOutbox() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_outboxKey);
+    final raw = prefs.getString(outboxKey);
     if (raw == null) return;
     try {
       final list = jsonDecode(raw) as List;

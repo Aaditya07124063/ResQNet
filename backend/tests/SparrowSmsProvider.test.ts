@@ -1,4 +1,5 @@
 import { SparrowSmsProvider } from '../src/services/sms/SparrowSmsProvider';
+import { SmsProviderError } from '../src/services/sms/SmsProviderError';
 
 const SECRET_TOKEN = 'sparrow-secret-token-should-never-leak';
 
@@ -50,7 +51,27 @@ describe('SparrowSmsProvider', () => {
 
   it('throws on a documented Sparrow error response_code', async () => {
     mockFetchOnce(403, { response_code: 1002, response: 'Invalid Token' });
-    await expect(makeProvider().send('+9779812345678', 'x')).rejects.toThrow(/1002/);
+    await expect(makeProvider().send('+9779812345678', 'x')).rejects.toMatchObject({
+      kind: 'configuration',
+      providerCode: '1002',
+    });
+  });
+
+  it.each([
+    [1007, 'recipient'],
+    [1011, 'recipient'],
+    [1013, 'availability'],
+  ])('classifies Sparrow response_code %s as %s', async (code, kind) => {
+    mockFetchOnce(403, { response_code: code, response: 'error' });
+    await expect(makeProvider().send('+9779812345678', 'x')).rejects.toMatchObject({ kind });
+  });
+
+  it('reports non-Nepali numbers as unsupported without calling Sparrow', async () => {
+    const mockFetch = mockFetchOnce(200, { response_code: 200 });
+    const error = await makeProvider().send('+919812345678', 'x').catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(SmsProviderError);
+    expect((error as SmsProviderError).kind).toBe('unsupported');
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('throws on a network-level failure without leaking the token', async () => {
@@ -68,7 +89,7 @@ describe('SparrowSmsProvider', () => {
         throw new Error('not json');
       },
     } as unknown as Response);
-    await expect(makeProvider().send('+9779812345678', 'x')).rejects.toThrow(/non-JSON/);
+    await expect(makeProvider().send('+9779812345678', 'x')).rejects.toMatchObject({ kind: 'availability' });
   });
 
   it('never includes the API token in any thrown error message', async () => {

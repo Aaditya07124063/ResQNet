@@ -50,6 +50,13 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- FCM pushes that don't name a channel use ResQNet's alerts
+             channel (created in NotificationService) instead of a generic
+             fallback channel. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="resqnet_alerts" />
+
         <!-- flutter_foreground_task requires the consuming app to declare
              this service itself (its own manifest doesn't). -->
         <service

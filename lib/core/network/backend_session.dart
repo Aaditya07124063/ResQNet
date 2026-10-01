@@ -2,10 +2,8 @@ import 'api_client.dart';
 import 'jwt_utils.dart';
 import 'token_storage.dart';
 
-/// Phase 4A: the backend session-state foundation. Deliberately standalone
-/// (no Firebase dependency at all) so it's usable — and testable — on its
-/// own, ahead of Phase 4B/4C wiring this into `_AuthGate`
-/// (lib/app.dart). Nothing here touches Firebase or the existing UI.
+/// Startup restoration of the ResQNet backend session (the app's only
+/// session), used by BackendSessionController and the auth gate.
 class BackendSession {
   const BackendSession._();
 
@@ -15,8 +13,10 @@ class BackendSession {
   ///     claim) expired yet -> authenticated, no network call needed
   ///   - an expired/missing access token but a stored refresh token ->
   ///     attempt exactly one refresh; its result decides the outcome
-  ///   - refresh fails -> local session already cleared by ApiClient,
-  ///     not authenticated
+  ///   - refresh rejected by the server -> local session already cleared
+  ///     by ApiClient, not authenticated
+  ///   - refresh impossible because the server is unreachable -> stays
+  ///     authenticated (offline); tokens are kept
   static Future<bool> restore() async {
     final accessToken = await TokenStorage.instance.readAccessToken();
     if (accessToken != null && !isJwtExpired(accessToken)) {
@@ -28,6 +28,9 @@ class BackendSession {
       return false;
     }
 
-    return ApiClient.instance.refreshSession();
+    // Offline with an expired access token: the stored refresh token is
+    // still valid as far as we know, so the user stays signed in and the
+    // next online request refreshes it. Only a server rejection ends it.
+    return await ApiClient.instance.refreshSessionOutcome() != RefreshOutcome.rejected;
   }
 }

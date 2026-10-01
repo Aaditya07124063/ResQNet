@@ -1,3 +1,4 @@
+import { isSosSensitiveExpired, retentionPolicyFromEnv } from '../services/retention/retentionPolicy';
 export type OriginVerificationState = 'not_applicable' | 'verified' | 'unverified_unregistered';
 
 export interface DbSosEventRow {
@@ -20,6 +21,10 @@ export interface DbSosEventRow {
   origin_claimed_user_id: string | null;
   origin_verification_state: OriginVerificationState;
   origin_envelope_raw: unknown | null;
+  // Lifecycle (migration 011). Optional so rows from narrower SELECTs still type-check.
+  ops_closed_at?: Date | null;
+  sensitive_redacted_at?: Date | null;
+  retention_hold_at?: Date | null;
 }
 
 /** Deliberately omits `user_id` — every route this is returned from is
@@ -44,6 +49,26 @@ export interface SosEvent {
   serverReceivedAt: string;
   resolvedAt: string | null;
   originVerificationState: OriginVerificationState;
+  /**
+   * True when the message and location were removed under the retention
+   * policy (or are past it and awaiting the purge job). The fields above
+   * are then null.
+   */
+  sensitiveRemoved: boolean;
+}
+
+/**
+ * Whether a closed incident's message and location must no longer be
+ * served: already redacted, or past RETENTION_SOS_SENSITIVE_DAYS since
+ * closure (not on hold) even if the purge job has not run yet.
+ */
+export function sosSensitiveRemoved(row: Pick<DbSosEventRow, 'ops_closed_at' | 'sensitive_redacted_at' | 'retention_hold_at'>, now = new Date()): boolean {
+  if (row.sensitive_redacted_at) return true;
+  return isSosSensitiveExpired(
+    { ops_closed_at: row.ops_closed_at ?? null, retention_hold_at: row.retention_hold_at ?? null },
+    now,
+    retentionPolicyFromEnv(),
+  );
 }
 
 // pg returns NUMERIC columns as strings (no type parser is registered in
@@ -54,19 +79,21 @@ function toNullableNumber(value: string | null): number | null {
 }
 
 export function toSosEvent(row: DbSosEventRow): SosEvent {
+  const removed = sosSensitiveRemoved(row);
   return {
     id: row.id,
     eventId: row.event_id,
     eventSource: row.event_source,
     category: row.category,
-    message: row.message,
-    latitude: toNullableNumber(row.latitude),
-    longitude: toNullableNumber(row.longitude),
-    locationAccuracyM: toNullableNumber(row.location_accuracy_m),
+    message: removed ? null : row.message,
+    latitude: removed ? null : toNullableNumber(row.latitude),
+    longitude: removed ? null : toNullableNumber(row.longitude),
+    locationAccuracyM: removed ? null : toNullableNumber(row.location_accuracy_m),
     status: row.status,
     clientCreatedAt: row.client_created_at.toISOString(),
     serverReceivedAt: row.server_received_at.toISOString(),
     resolvedAt: row.resolved_at ? row.resolved_at.toISOString() : null,
     originVerificationState: row.origin_verification_state,
+    sensitiveRemoved: removed,
   };
 }

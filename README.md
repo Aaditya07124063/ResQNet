@@ -60,6 +60,14 @@ ResQNet is under active development.
 
 The project is focused on building reliable emergency communication capabilities for situations where conventional internet and mobile networks may fail.
 
+## Documentation
+
+- [Feature status](docs/FEATURE_STATUS.md): what works, what is partial, and what is missing
+- [Release checklist](docs/RELEASE_CHECKLIST.md)
+- [Physical test plan](docs/PHYSICAL_TEST_PLAN.md)
+- [Security](docs/SECURITY.md) · [Privacy and data retention](docs/PRIVACY_AND_RETENTION.md) · [Operations](docs/OPERATIONS.md) (deployment, backups, and the staff operations portal)
+- [Offline maps and routing](docs/OFFLINE_MAPS_AND_ROUTING.md) · [Disaster sources](docs/DISASTER_SOURCES.md) · [SMS providers](docs/SMS_PROVIDERS.md)
+
 ## Official Links
 
 - **Website:** https://resqnet.co/

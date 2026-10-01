@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +8,7 @@ import 'core/services/theme_service.dart';
 import 'features/auth/auth_service.dart';
 import 'features/auth/login_screen.dart';
 import 'features/home/home_screen.dart';
+import 'features/employee/employee_portal_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
 import 'features/sos/sos_screen.dart';
 import 'features/mesh/mesh_screen.dart';
@@ -120,6 +120,7 @@ class ResQNetApp extends StatelessWidget {
         AppRoutes.mesh: (_) => const MeshScreen(),
         AppRoutes.map: (_) => const MapScreen(),
         AppRoutes.dashboard: (_) => const DashboardScreen(),
+        AppRoutes.employeePortal: (_) => const EmployeePortalScreen(),
       },
     );
   }
@@ -136,13 +137,9 @@ class _AuthGateState extends State<_AuthGate> {
   @override
   void initState() {
     super.initState();
-    // Phase 4B: kick off backend-session restoration in parallel with
-    // Firebase's own state, purely so it's tracked (AuthService.backendSession)
-    // for Phase 4C/4D to consume later. Deliberately NOT awaited and NOT
-    // used to decide what this widget renders below — Firebase's
-    // authStateChanges() remains the sole gate until Google login is cut
-    // over. A failure here must never affect the (Firebase-driven) auth
-    // flow, hence the broad catch.
+    // Restores the ResQNet backend session (stored tokens, one refresh if
+    // needed; offline keeps an existing session). A failure here is never
+    // fatal — it simply leaves the user signed out.
     unawaited(
       context.read<AuthService>().restoreBackendSession().then((_) {}, onError: (_) {}),
     );
@@ -151,42 +148,34 @@ class _AuthGateState extends State<_AuthGate> {
   @override
   Widget build(BuildContext context) {
     const primary = ThemeService.primaryColor;
-    // Phase 4C: the backend Google-login path is now authoritative for
-    // Google sign-in, alongside Firebase (still authoritative for phone
-    // login, until Phase 9). A user is considered signed in if EITHER
-    // session is valid — a backend-authenticated Google user must never
-    // be bounced back to LoginScreen just because FirebaseAuth.currentUser
-    // is null, since backend Google login deliberately does not create a
-    // Firebase session at all.
-    final backendStatus = context.watch<AuthService>().backendSession.status;
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      initialData: FirebaseAuth.instance.currentUser,
-      builder: (context, snapshot) {
-        final firebaseStillResolving =
-            snapshot.connectionState == ConnectionState.waiting &&
-                !snapshot.hasData;
-        // Wait for the startup restoreBackendSession() call (kicked off in
-        // initState) to finish at least once before deciding — otherwise a
-        // Google-only user would flash LoginScreen for a frame on every
-        // cold start before their restored backend session is observed.
-        final backendStillResolving =
-            backendStatus == BackendSessionStatus.unknown ||
-                backendStatus == BackendSessionStatus.restoring;
-        if (firebaseStillResolving || backendStillResolving) {
-          return Scaffold(
-            body:
-                Center(child: CircularProgressIndicator(color: primary)),
-          );
-        }
-        final firebaseSignedIn = snapshot.hasData && snapshot.data != null;
-        final backendSignedIn =
-            backendStatus == BackendSessionStatus.authenticated;
-        if (firebaseSignedIn || backendSignedIn) {
-          return const HomeScreen();
-        }
-        return const LoginScreen();
-      },
+    // The ResQNet backend session is the only authority on sign-in state.
+    final status = context.watch<AuthService>().backendSession.status;
+    return authGateScreenFor(
+      status,
+      loading: Scaffold(body: Center(child: CircularProgressIndicator(color: primary))),
+      signedIn: const HomeScreen(),
+      signedOut: const LoginScreen(),
     );
+  }
+}
+
+/// Which screen the auth gate shows for a backend session [status].
+/// Resolving (unknown/restoring) shows [loading] so a signed-in user never
+/// flashes the sign-in screen on cold start.
+@visibleForTesting
+Widget authGateScreenFor(
+  BackendSessionStatus status, {
+  required Widget loading,
+  required Widget signedIn,
+  required Widget signedOut,
+}) {
+  switch (status) {
+    case BackendSessionStatus.unknown:
+    case BackendSessionStatus.restoring:
+      return loading;
+    case BackendSessionStatus.authenticated:
+      return signedIn;
+    case BackendSessionStatus.unauthenticated:
+      return signedOut;
   }
 }

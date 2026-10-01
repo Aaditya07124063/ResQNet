@@ -1,5 +1,6 @@
-import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
+import { createHmac, hkdfSync, randomInt, timingSafeEqual } from 'node:crypto';
 import { pool, withTransaction } from '../database/pool';
+import { env } from '../config/env';
 import { HttpError } from '../utils/httpError';
 
 // OTP/verification-attempt handling for phone (and, in future, email) OTP
@@ -28,8 +29,21 @@ interface RequestOtpParams {
   ipAddress: string | null;
 }
 
-function hashCode(code: string): string {
-  return createHash('sha256').update(code).digest('hex');
+// A bare SHA-256 of a 6-digit code is reversible by enumerating all 10^6
+// candidates, so anyone with read access to verification_attempts could
+// recover live codes. The stored digest is therefore an HMAC keyed by a
+// server-only secret (derived from JWT_ACCESS_SECRET with a distinct HKDF
+// label, so no new deployment secret is required) and bound to the
+// channel/target/purpose, so a digest cannot be replayed for another number.
+// The output is still 64 hex chars, matching code_hash CHAR(64).
+let otpHashKey: Buffer | undefined;
+function getOtpHashKey(): Buffer {
+  otpHashKey ??= Buffer.from(hkdfSync('sha256', env.JWT_ACCESS_SECRET, 'resqnet', 'otp-code-hash-v1', 32));
+  return otpHashKey;
+}
+
+export function hashCode(code: string, channel: VerificationChannel, target: string, purpose: VerificationPurpose): string {
+  return createHmac('sha256', getOtpHashKey()).update(`${channel}\n${target}\n${purpose}\n${code}`).digest('hex');
 }
 
 /** Cryptographically secure, unbiased 6-digit numeric code (leading zeros
@@ -63,31 +77,55 @@ interface DbVerificationAttemptRow {
  * row must exist before send is attempted so a resend-cooldown/attempt
  * budget applies even if the send itself later fails).
  */
-export async function requestOtp(params: RequestOtpParams): Promise<{ code: string }> {
-  const { rows } = await pool.query<{ created_at: Date }>(
-    `SELECT created_at FROM verification_attempts
-     WHERE channel = $1 AND target = $2 AND purpose = $3
-     ORDER BY created_at DESC LIMIT 1`,
-    [params.channel, params.target, params.purpose],
-  );
-  const lastAttempt = rows[0];
-  if (lastAttempt) {
-    const secondsSinceLast = (Date.now() - lastAttempt.created_at.getTime()) / 1000;
-    if (secondsSinceLast < RESEND_COOLDOWN_SECONDS) {
-      throw HttpError.tooManyRequests('Please wait before requesting another code');
+export async function requestOtp(params: RequestOtpParams): Promise<{ code: string; attemptId: string }> {
+  return withTransaction(async (client) => {
+    // Serializes concurrent requests for the same (channel, target, purpose)
+    // so two simultaneous sends cannot both pass the cooldown check below
+    // and dispatch two SMS. Released automatically at transaction end.
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+      `otp:${params.channel}:${params.target}:${params.purpose}`,
+    ]);
+
+    const { rows } = await client.query<{ created_at: Date }>(
+      `SELECT created_at FROM verification_attempts
+       WHERE channel = $1 AND target = $2 AND purpose = $3
+       ORDER BY created_at DESC LIMIT 1`,
+      [params.channel, params.target, params.purpose],
+    );
+    const lastAttempt = rows[0];
+    if (lastAttempt) {
+      const secondsSinceLast = (Date.now() - lastAttempt.created_at.getTime()) / 1000;
+      if (secondsSinceLast < RESEND_COOLDOWN_SECONDS) {
+        throw HttpError.tooManyRequests('Please wait before requesting another code');
+      }
     }
-  }
 
-  const code = generateCode();
-  const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60_000);
+    const code = generateCode();
+    const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60_000);
 
-  await pool.query(
-    `INSERT INTO verification_attempts (channel, target, purpose, code_hash, max_attempts, expires_at, ip_address)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [params.channel, params.target, params.purpose, hashCode(code), OTP_MAX_ATTEMPTS, expiresAt, params.ipAddress],
-  );
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO verification_attempts (channel, target, purpose, code_hash, max_attempts, expires_at, ip_address)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id`,
+      [
+        params.channel,
+        params.target,
+        params.purpose,
+        hashCode(code, params.channel, params.target, params.purpose),
+        OTP_MAX_ATTEMPTS,
+        expiresAt,
+        params.ipAddress,
+      ],
+    );
 
-  return { code };
+    return { code, attemptId: inserted.rows[0]!.id };
+  });
+}
+
+/** Records which provider accepted the OTP message. Only the provider type
+ * is stored, never a provider response body or message content. */
+export async function recordOtpDeliveryProvider(attemptId: string, providerType: string): Promise<void> {
+  await pool.query('UPDATE verification_attempts SET provider_type = $1 WHERE id = $2', [providerType, attemptId]);
 }
 
 export type VerifyOtpOutcome =
@@ -142,10 +180,10 @@ export async function verifyOtp(params: {
       return { outcome: 'invalid' };
     }
 
-    // Fixed-length SHA-256 hex digests (both always 64 hex chars from
+    // Fixed-length HMAC-SHA256 hex digests (both always 64 hex chars from
     // hashCode()) — timingSafeEqual is safe here because both buffers are
     // always the same length by construction, not attacker-influenced.
-    const submittedHash = Buffer.from(hashCode(params.code), 'hex');
+    const submittedHash = Buffer.from(hashCode(params.code, params.channel, params.target, params.purpose), 'hex');
     const storedHash = Buffer.from(row.code_hash, 'hex');
     const matches = submittedHash.length === storedHash.length && timingSafeEqual(submittedHash, storedHash);
 

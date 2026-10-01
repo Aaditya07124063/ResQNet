@@ -30,8 +30,7 @@ class _CrashCountdownDialogState extends State<CrashCountdownDialog> {
   void initState() {
     super.initState();
     HapticFeedback.heavyImpact();
-    _totalSeconds =
-        context.read<CrashDetectionService>().confirmationCountdown.inSeconds;
+    _totalSeconds = context.read<CrashDetectionService>().confirmationCountdown.inSeconds;
     _remaining = _totalSeconds;
     _startCountdown();
   }
@@ -50,12 +49,20 @@ class _CrashCountdownDialogState extends State<CrashCountdownDialog> {
 
   Future<void> _sendSOS() async {
     if (_sosSent) return;
-    _sosSent = true;
+    // Once sending starts, "cancel" here would only close the dialog while
+    // the SOS still goes out — the button is disabled and the user ends
+    // the SOS from Home ("I'm safe") instead.
+    setState(() => _sosSent = true);
     _timer?.cancel();
 
     final crashService = context.read<CrashDetectionService>();
     final profileService = context.read<ProfileService>();
     final auth = context.read<AuthService>();
+    // Captured before any await: the auto-SOS must be sent even if this
+    // dialog is disposed while it is being prepared.
+    final deps = SosDispatchDeps.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     crashService.confirm();
 
     final evidence = crashService.evidence;
@@ -64,38 +71,37 @@ class _CrashCountdownDialogState extends State<CrashCountdownDialog> {
         speedDrop != null && speedDrop > 0 ? ' | Speed drop: ${(speedDrop * 3.6).toStringAsFixed(0)} km/h' : '';
     final name = profileService.name.isNotEmpty
         ? profileService.name
-        : (auth.currentUser?.displayName ??
-            auth.currentUser?.phoneNumber ??
-            'Unknown');
+        : (auth.currentUser?.displayName ?? auth.currentUser?.phoneNumber ?? 'Unknown');
 
     // Same routing as a manual SOS: mesh (nearby devices), trusted
     // contacts + police/disaster hotline (SMS, works offline), and all
     // ResQNet users once online — a crash is exactly when someone might
     // be unable to trigger SOS themselves.
-    await SosDispatchService.dispatch(
-      context,
-      userId: auth.currentUser?.uid ?? 'unknown',
+    await profileService.loadMedicalSharingPreference();
+    final result = await SosDispatchService.dispatchWith(
+      deps,
+      userId: await auth.currentSenderId(),
       userName: name,
       category: SosCategory.rescue,
       message: '🚗 VEHICLE CRASH DETECTED — AUTO SOS '
-          '(confidence ${(evidence.totalConfidence * 100).toStringAsFixed(0)}%)$speedStr\n'
-          'Blood: ${profileService.bloodGroup} | Allergies: ${profileService.allergies}',
+          '(detector score ${(evidence.totalConfidence * 100).toStringAsFixed(0)}%)$speedStr',
       eventSource: 'crash_detection',
+      // Blood group and allergies only if the user opted in (off by default).
+      medicalSummary: profileService.automaticSosMedicalSummary,
     );
     HapticFeedback.vibrate();
 
-    if (mounted) {
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🚨 Crash SOS sent'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+    if (mounted) navigator.pop();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(result.alreadyActive ? 'Your SOS was already active — it continues.' : '🚨 Crash SOS activated'),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
 
   void _iAmOk() {
+    if (_sosSent) return;
     _timer?.cancel();
     context.read<CrashDetectionService>().cancel();
     HapticFeedback.selectionClick();
@@ -171,16 +177,15 @@ class _CrashCountdownDialogState extends State<CrashCountdownDialog> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
+                color: Colors.white.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Confidence: ${(evidence.totalConfidence * 100).toStringAsFixed(0)}%',
-                    style: const TextStyle(
-                        color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                    'Detector score: ${(evidence.totalConfidence * 100).toStringAsFixed(0)}% (not a verified probability)',
+                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -203,11 +208,11 @@ class _CrashCountdownDialogState extends State<CrashCountdownDialog> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: _iAmOk,
+                  onPressed: _sosSent ? null : _iAmOk,
                   icon: const Icon(Icons.check_circle, color: Colors.red),
-                  label: const Text(
-                    "I'M OK — CANCEL",
-                    style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                  label: Text(
+                    _sosSent ? 'SOS SENDING — END IT FROM HOME' : "I'M OK — CANCEL",
+                    style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,

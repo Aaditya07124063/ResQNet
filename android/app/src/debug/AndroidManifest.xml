@@ -4,4 +4,8 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Debug builds only: lets the development API default
+         (http://10.0.2.2:4000, a local backend) work. Release builds keep
+         Android's default cleartext block and use https://api.resqnet.co. -->
+    <application android:usesCleartextTraffic="true"/>
 </manifest>

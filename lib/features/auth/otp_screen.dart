@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:pinput/pinput.dart';
 import '../../core/constants/app_colors.dart';
-import '../../core/constants/app_routes.dart';
 import 'auth_service.dart';
+import 'phone_otp_mode.dart';
+import '../../core/network/api_exception.dart';
 
 class OtpScreen extends StatefulWidget {
   final String phoneNumber;
+
   const OtpScreen({super.key, required this.phoneNumber});
   @override
   State<OtpScreen> createState() => _OtpScreenState();
@@ -25,7 +27,7 @@ class _OtpScreenState extends State<OtpScreen> {
   }
 
   void _startTimer() {
-    setState(() => _secondsLeft = 30);
+    setState(() => _secondsLeft = backendOtpResendSeconds);
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_secondsLeft == 0) {
@@ -51,41 +53,40 @@ class _OtpScreenState extends State<OtpScreen> {
       return;
     }
     final auth = context.read<AuthService>();
-    final success = await auth.verifyOtp(_otpCtrl.text.trim());
-    if (success && mounted) {
-      Navigator.pushReplacementNamed(context, AppRoutes.home);
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Invalid OTP. Please try again.'),
-            backgroundColor: AppColors.emergencyRed),
-      );
+
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    try {
+      await auth.verifyOtpBackend(phoneNumber: widget.phoneNumber, code: _otpCtrl.text.trim());
+      // The auth gate switches to Home once the backend session is set.
+      navigator.popUntil((route) => route.isFirst);
+    } on ApiException catch (e) {
+      _otpCtrl.clear();
+      messenger.showSnackBar(SnackBar(
+        content: Text(describeOtpVerifyError(e)),
+        backgroundColor: AppColors.emergencyRed,
+      ));
     }
   }
 
   Future<void> _resendOtp() async {
     final auth = context.read<AuthService>();
     _otpCtrl.clear();
-    await auth.sendOtp(
-      phoneNumber: widget.phoneNumber,
-      onCodeSent: () {
-        _startTimer();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('OTP resent successfully!'),
-            backgroundColor: AppColors.safeGreen,
-          ),
-        );
-      },
-      onError: (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e),
-            backgroundColor: AppColors.emergencyRed,
-          ),
-        );
-      },
-    );
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await auth.sendOtpBackend(widget.phoneNumber);
+      _startTimer();
+      messenger.showSnackBar(const SnackBar(
+        content: Text('A new code was requested.'),
+        backgroundColor: AppColors.safeGreen,
+      ));
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(describeOtpSendError(e)),
+        backgroundColor: AppColors.emergencyRed,
+      ));
+    }
   }
 
   @override
@@ -151,7 +152,7 @@ class _OtpScreenState extends State<OtpScreen> {
                           color: AppColors.textSecondary, fontSize: 14),
                     )
                   : TextButton(
-                      onPressed: auth.isLoading ? null : _resendOtp,
+                      onPressed: auth.isLoading || auth.backendLoading ? null : _resendOtp,
                       child: const Text(
                         'Resend OTP',
                         style: TextStyle(
@@ -166,13 +167,13 @@ class _OtpScreenState extends State<OtpScreen> {
               width: double.infinity,
               height: 52,
               child: ElevatedButton(
-                onPressed: auth.isLoading ? null : _verify,
+                onPressed: auth.isLoading || auth.backendLoading ? null : _verify,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.emergencyRed,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
-                child: auth.isLoading
+                child: auth.isLoading || auth.backendLoading
                     ? const CircularProgressIndicator(color: Colors.white)
                     : const Text('Verify OTP',
                         style: TextStyle(

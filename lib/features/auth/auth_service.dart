@@ -1,164 +1,183 @@
-import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/services/communication_service.dart';
+import '../../core/services/profile_service.dart';
+import '../../core/services/trusted_contacts_service.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/backend_session_controller.dart';
+import '../../core/network/jwt_utils.dart';
 import '../../core/network/token_storage.dart';
 import '../../core/network/websocket_client.dart';
 
+/// The signed-in ResQNet user, as returned by `GET /api/v1/me`.
+class ResQNetUser {
+  const ResQNetUser({required this.id, this.displayName, this.email, this.phoneNumber});
+
+  final String id;
+  final String? displayName;
+  final String? email;
+  final String? phoneNumber;
+
+  factory ResQNetUser.fromJson(Map<String, dynamic> json) => ResQNetUser(
+        id: json['id'] as String,
+        displayName: json['displayName'] as String?,
+        email: json['email'] as String?,
+        phoneNumber: json['phoneNumber'] as String?,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'displayName': displayName,
+        'email': email,
+        'phoneNumber': phoneNumber,
+      };
+}
+
+/// Authentication against the ResQNet backend (Hostinger), which is the
+/// only authority for who is signed in:
+///
+/// - Google: Google Sign-In ID token → `POST /api/v1/auth/google`
+/// - Phone: `POST /api/v1/auth/phone/send-otp` → `verify-otp`
+///
+/// Both store the backend's access/refresh tokens in secure storage
+/// ([TokenStorage]) and mark [backendSession] authenticated; [ApiClient]
+/// refreshes them. There is no second (Firebase) session.
 class AuthService extends ChangeNotifier {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
-
-  AuthService() {
-    // Phase 4C: relay backendSession's own notifications as this class's
-    // notifications too, so anything watching AuthService via Provider
-    // (e.g. _AuthGate) rebuilds when backend auth state changes, not just
-    // when AuthService's own fields change.
+  AuthService({GoogleSignIn? googleSignIn}) : _googleSignIn = googleSignIn ?? GoogleSignIn() {
+    // Relay session changes so anything watching AuthService (the auth
+    // gate) rebuilds when backend auth state changes.
     backendSession.addListener(notifyListeners);
+    // The backend rejected the refresh token: the session is over.
+    ApiClient.sessionEnded.addListener(_onSessionEnded);
   }
 
-  User? get currentUser => _auth.currentUser;
-  bool get isLoggedIn => _auth.currentUser != null;
+  final GoogleSignIn _googleSignIn;
 
-  String _verificationId = '';
-  bool _isLoading = false;
-  String _error = '';
+  final BackendSessionController backendSession = BackendSessionController();
 
-  bool get isLoading => _isLoading;
-  String get error => _error;
+  static const _userCacheKey = 'resqnet_current_user_v1';
+  ResQNetUser? _currentUser;
 
-  // Phone OTP
-  Future<void> sendOtp({
-    required String phoneNumber,
-    required Function onCodeSent,
-    required Function(String) onError,
-  }) async {
-    _isLoading = true;
-    _error = '';
-    notifyListeners();
-    try {
-      await _auth.verifyPhoneNumber(
-        phoneNumber: phoneNumber,
-        verificationCompleted: (PhoneAuthCredential credential) async {
-          await _auth.signInWithCredential(credential);
-          notifyListeners();
-        },
-        verificationFailed: (FirebaseAuthException e) {
-          _error = e.message ?? 'Verification failed';
-          _isLoading = false;
-          notifyListeners();
-          onError(_error);
-        },
-        codeSent: (String verificationId, int? resendToken) {
-          _verificationId = verificationId;
-          _isLoading = false;
-          notifyListeners();
-          onCodeSent();
-        },
-        codeAutoRetrievalTimeout: (String verificationId) {
-          _verificationId = verificationId;
-        },
-      );
-    } catch (e) {
-      _error = e.toString();
-      _isLoading = false;
-      notifyListeners();
-      onError(_error);
-    }
-  }
+  /// The signed-in user's profile basics (cached for offline use); null
+  /// when signed out or not loaded yet.
+  ResQNetUser? get currentUser => _currentUser;
 
-  // Verify OTP
-  Future<bool> verifyOtp(String otp) async {
-    _isLoading = true;
-    notifyListeners();
-    try {
-      final credential = PhoneAuthProvider.credential(
-        verificationId: _verificationId,
-        smsCode: otp,
-      );
-      await _auth.signInWithCredential(credential);
-      _isLoading = false;
-      notifyListeners();
-      return true;
-    } catch (e) {
-      _error = 'Invalid OTP. Please try again.';
-      _isLoading = false;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  // Phase 20 (Firebase removal): the old Firebase-credential Google
-  // Sign-In path (`signInWithGoogle()`, using
-  // `FirebaseAuth.signInWithCredential`) has been removed — confirmed
-  // unused anywhere in the app (login_screen.dart's Google button has
-  // called `signInWithGoogleBackend()` below since Phase 4C). Firebase
-  // Auth itself is NOT removed here — phone sign-in (below) still
-  // depends on it entirely, with no backend replacement (Phase 8/9 SMS
-  // provider system was never built).
-
-  // Sign Out
-  Future<void> signOut() async {
-    await _auth.signOut();
-    await _googleSignIn.signOut();
-    // Phase 4B: logout state synchronization — ending the Firebase
-    // session also ends any backend session, so the two never disagree
-    // about whether the user is signed in. signOutBackend() is already
-    // safe to call even when no backend session was ever established
-    // (Google login isn't cut over yet, so today this is a no-op for
-    // almost everyone) — it no-ops on a missing refresh token and always
-    // clears local tokens regardless of network outcome.
-    await signOutBackend();
-    backendSession.markSignedOut();
-    // Communication phase: a stale connection authenticated as the
-    // now-signed-out user must never keep receiving realtime events —
-    // the next sign-in (same or different account) calls
-    // CommunicationService.initialize(), which reconnects fresh.
-    ResQNetWebSocketClient.instance.disconnect();
-    notifyListeners();
-  }
-
-  // --- ResQNet backend session (Phase 4 — additive, not yet wired into the
-  // login UI). This talks to the new backend's POST /auth/google, which
-  // verifies the Google ID token itself via google-auth-library rather
-  // than going through FirebaseAuth.signInWithCredential. It is
-  // deliberately separate from signInWithGoogle() above: the existing
-  // Firebase-based flow keeps working untouched, and this is exercised
-  // once the backend is actually deployed (still blocked on the open
-  // domain/VPS questions in docs/AUDIT.md) and can be tested end-to-end.
-  //
-  // Reuses the SAME Google idToken v6's `GoogleSignIn().signIn()` already
-  // retrieves — no google_sign_in package upgrade needed for this step;
-  // see docs/DONE.md for why that upgrade is being deferred separately.
+  bool get isLoggedIn => backendSession.status == BackendSessionStatus.authenticated;
 
   bool _backendLoading = false;
   bool get backendLoading => _backendLoading;
 
-  /// Phase 4B: observable backend-session state (unknown / restoring /
-  /// authenticated / unauthenticated), separate from this class so it
-  /// stays unit-testable without Firebase (see backend_session_controller.dart's
-  /// doc comment). `_AuthGate` (lib/app.dart) reads this to track backend
-  /// state in parallel with Firebase — it does NOT currently change which
-  /// screen is shown; Firebase's authStateChanges() remains the sole gate
-  /// until Phase 4C/4D.
-  final BackendSessionController backendSession = BackendSessionController();
+  /// Kept for existing screens; there is only one (backend) loading state.
+  bool get isLoading => _backendLoading;
 
-  Future<bool> isBackendSignedIn() async =>
-      (await TokenStorage.instance.readAccessToken()) != null;
+  void _onSessionEnded() {
+    if (backendSession.status != BackendSessionStatus.authenticated) return;
+    _currentUser = null;
+    unawaited(_clearUserCache());
+    backendSession.markSignedOut();
+    ResQNetWebSocketClient.instance.disconnect();
+  }
 
-  /// Phase 4A/4B session-state foundation: determines whether the backend
-  /// session is (or can be restored to be) authenticated right now —
-  /// checking the stored access token's own expiry locally first, and
-  /// falling back to exactly one refresh attempt if needed. Updates
-  /// [backendSession] as a side effect so the UI can observe the result.
-  /// Does NOT touch Firebase or change what `_AuthGate` (lib/app.dart)
-  /// gates navigation on — wiring this into the actual gate decision is
-  /// Phase 4C/4D, not this phase.
+  @override
+  void dispose() {
+    ApiClient.sessionEnded.removeListener(_onSessionEnded);
+    backendSession.removeListener(notifyListeners);
+    super.dispose();
+  }
+
+  Future<bool> isBackendSignedIn() async => (await TokenStorage.instance.readAccessToken()) != null;
+
+  /// Identifier used to label locally created messages (mesh senderId) —
+  /// the backend session's user id. Never used for backend authorization,
+  /// which the backend derives from the request's own JWT.
+  Future<String> currentSenderId() async {
+    final accessToken = await TokenStorage.instance.readAccessToken();
+    if (accessToken != null) {
+      final subject = jwtSubject(accessToken);
+      if (subject != null) return subject;
+    }
+    return _currentUser?.id ?? 'anonymous';
+  }
+
+  /// Restores the backend session at app start (valid access token, or one
+  /// refresh; offline keeps the session). Loads the cached user first so
+  /// the app works offline, then refreshes it from `/me` in the background.
   Future<bool> restoreBackendSession() async {
     await backendSession.restore();
-    return backendSession.status == BackendSessionStatus.authenticated;
+    final authenticated = backendSession.status == BackendSessionStatus.authenticated;
+    if (authenticated) {
+      await _loadUserCache();
+      unawaited(refreshCurrentUser());
+    } else {
+      _currentUser = null;
+    }
+    notifyListeners();
+    return authenticated;
+  }
+
+  /// Loads the signed-in user from `GET /api/v1/me`. Best-effort: offline
+  /// keeps the cached user.
+  Future<void> refreshCurrentUser() async {
+    try {
+      final response = await ApiClient.instance.get('/me', auth: true);
+      final user = response['user'];
+      if (user is Map<String, dynamic>) {
+        _currentUser = ResQNetUser.fromJson(user);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_userCacheKey, jsonEncode(_currentUser!.toJson()));
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Could not load the current user: $e');
+    }
+  }
+
+  Future<void> _loadUserCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_userCacheKey);
+      if (raw != null) _currentUser = ResQNetUser.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      _currentUser = null;
+    }
+  }
+
+  Future<void> _clearUserCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_userCacheKey);
+      // The medical-sharing opt-in belongs to the person who chose it: the
+      // next person to sign in on this phone starts with it OFF.
+      await prefs.remove(ProfileService.includeMedicalInAutoSosKey);
+      // Personal data cached for the signed-in user. The emergency outbox
+      // is deliberately kept: SOS delivery must not depend on being signed
+      // in (it is pruned by age instead).
+      for (final key in [ProfileService.storageKey, TrustedContactsService.storageKey, CommunicationService.outboxKey]) {
+        await prefs.remove(key);
+      }
+    } catch (_) {}
+  }
+
+  /// Signs out: revokes and clears the backend session, signs out of the
+  /// Google account picker, and closes the realtime connection.
+  Future<void> signOut() async {
+    await signOutBackend();
+    try {
+      await _googleSignIn.signOut();
+    } catch (e) {
+      debugPrint('Google sign-out failed: $e');
+    }
+    _currentUser = null;
+    await _clearUserCache();
+    backendSession.markSignedOut();
+    // A connection authenticated as the signed-out user must not keep
+    // receiving realtime events.
+    ResQNetWebSocketClient.instance.disconnect();
+    notifyListeners();
   }
 
   /// Signs in against the ResQNet backend using a Google ID token — this
@@ -185,7 +204,8 @@ class AuthService extends ChangeNotifier {
       }
       if (googleUser == null) return false;
 
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
       final idToken = googleAuth.idToken;
       if (idToken == null) {
         throw const ApiException(
@@ -209,7 +229,63 @@ class AuthService extends ChangeNotifier {
       // be a redundant round trip immediately after a login that just
       // proved the session is good.
       backendSession.markAuthenticated();
+      await refreshCurrentUser();
       return true;
+    } finally {
+      _backendLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Requests a phone-OTP code from the ResQNet backend — Step 2 of the
+  /// Firebase migration (POST /auth/phone/send-otp). This is the app's
+  /// only phone sign-in path; the backend generates, delivers (through its
+  /// SMS provider system), and verifies the code.
+  ///
+  /// Throws [ApiException] on any failure, including a rate-limit 429 (IP
+  /// or phone-number limited, or the 60s resend cooldown) and a 500 if the
+  /// SMS provider itself failed to send. The backend's success response is
+  /// deliberately generic and reveals nothing about whether phoneNumber is
+  /// already registered — see authRoutes.ts.
+  Future<void> sendOtpBackend(String phoneNumber) async {
+    _backendLoading = true;
+    notifyListeners();
+    try {
+      await ApiClient.instance
+          .post('/auth/phone/send-otp', body: {'phoneNumber': phoneNumber});
+    } finally {
+      _backendLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Verifies a phone-OTP code against the ResQNet backend (POST
+  /// /auth/phone/verify-otp) and, on success, persists the resulting
+  /// session exactly like signInWithGoogleBackend() — same
+  /// TokenStorage.save()/backendSession.markAuthenticated() calls, so
+  /// downstream code can't tell the two sign-in methods apart.
+  ///
+  /// Throws [ApiException] on any failure. The backend returns the SAME
+  /// generic 401 for a wrong code, an expired code, an already-used code,
+  /// or no such code at all — this method does not and cannot distinguish
+  /// those cases either; show one generic "invalid or expired code"
+  /// message to the user regardless of [ApiException.message].
+  Future<void> verifyOtpBackend(
+      {required String phoneNumber, required String code}) async {
+    _backendLoading = true;
+    notifyListeners();
+    try {
+      final response = await ApiClient.instance.post(
+        '/auth/phone/verify-otp',
+        body: {'phoneNumber': phoneNumber, 'code': code},
+      );
+      final session = response['session'] as Map<String, dynamic>;
+      await TokenStorage.instance.save(
+        accessToken: session['accessToken'] as String,
+        refreshToken: session['refreshToken'] as String,
+      );
+      backendSession.markAuthenticated();
+      await refreshCurrentUser();
     } finally {
       _backendLoading = false;
       notifyListeners();

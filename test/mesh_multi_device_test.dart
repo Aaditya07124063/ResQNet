@@ -316,7 +316,8 @@ void main() {
         id: 'evt-hop-1',
         senderId: 'device-A',
         senderName: 'Hiker A',
-        message: 'help',
+        // Displayed text must equal the signed text (MeshService rejects a mismatch).
+        message: atLimitEnvelope.message!,
         type: EmergencyType.trapped,
         priority: PriorityLevel.critical,
         latitude: 27.7172,

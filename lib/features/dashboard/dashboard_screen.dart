@@ -1,4 +1,3 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
@@ -8,6 +7,7 @@ import '../../core/services/location_service.dart';
 import '../../core/services/mesh_service.dart';
 import '../../core/services/profile_service.dart';
 import '../../widgets/emergency_card.dart';
+import '../auth/auth_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -42,6 +42,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final ai = context.read<AiService>();
     final location = context.read<LocationService>();
     final profile = context.read<ProfileService>();
+    final auth = context.read<AuthService>();
 
     if (profile.name.isEmpty) {
       await profile.loadProfile();
@@ -49,10 +50,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     final type = ai.classifyEmergency(text);
     final priority = ai.assessPriority(text, type);
+    final senderId = await auth.currentSenderId();
 
     final msg = EmergencyMessage(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      senderId: FirebaseAuth.instance.currentUser?.uid ?? 'anonymous',
+      senderId: senderId,
       senderName: _isAnonymous
           ? 'Anonymous'
           : (profile.name.isNotEmpty ? profile.name : 'Unknown'),
@@ -62,9 +64,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       latitude: location.currentPosition?.latitude,
       longitude: location.currentPosition?.longitude,
       timestamp: DateTime.now(),
-      bloodGroup: _isAnonymous ? null : profile.bloodGroup,
-      allergies: _isAnonymous ? null : profile.allergies,
-      medications: _isAnonymous ? null : profile.medications,
     );
 
     mesh.broadcastMessage(msg);
@@ -154,8 +153,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   style: TextStyle(color: AppColors.textPrimary),
                   decoration: InputDecoration(
                     hintText: 'Type emergency message...',
-                    hintStyle:
-                        TextStyle(color: AppColors.textSecondary),
+                    hintStyle: TextStyle(color: AppColors.textSecondary),
                     filled: true,
                     fillColor: AppColors.cardDark,
                     border: OutlineInputBorder(
@@ -176,8 +174,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     color: AppColors.emergencyRed,
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.send,
-                      color: Colors.white, size: 22),
+                  child: const Icon(Icons.send, color: Colors.white, size: 22),
                 ),
               ),
             ],
@@ -196,12 +193,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Column(children: [
             Text(value,
                 style: TextStyle(
-                    color: color,
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold)),
+                    color: color, fontSize: 28, fontWeight: FontWeight.bold)),
             Text(label,
-                style: TextStyle(
-                    color: AppColors.textSecondary, fontSize: 12)),
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
           ]),
         ),
       );

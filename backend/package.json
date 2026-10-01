@@ -12,8 +12,11 @@
     "lint": "eslint --no-error-on-unmatched-pattern \"src/**/*.ts\" \"tests/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "test": "jest --runInBand",
+    "test:integration": "RESQNET_INTEGRATION_DB=1 jest --runInBand tests/integration",
     "migrate": "tsx src/database/migrate.ts",
-    "migrate:prod": "node dist/src/database/migrate.js"
+    "migrate:prod": "node dist/src/database/migrate.js",
+    "retention:run": "tsx src/scripts/runRetention.ts",
+    "retention:run:prod": "node dist/src/scripts/runRetention.js"
   },
   "engines": {
     "node": ">=18.18.0"

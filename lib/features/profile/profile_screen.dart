@@ -3,10 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/app_routes.dart';
+import '../permissions/permissions_screen.dart';
 import '../../core/data/locations.dart';
 import '../../core/network/api_client.dart';
 import '../../core/services/crash_detection_service.dart';
+import '../../core/services/communication_service.dart';
 import '../../core/services/profile_service.dart';
+import '../../core/services/trusted_contacts_service.dart';
+import 'medical_sharing_setting.dart';
 import '../../core/services/seismic_service.dart';
 import '../../core/services/sensor_recorder_service.dart';
 import '../../core/services/theme_service.dart';
@@ -163,11 +168,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _saving = true);
 
     final auth = context.read<AuthService>();
-    // No early return on a missing uid — that would skip the local cache
-    // save too (this used to write straight to Firestore only, so an
-    // unauthenticated/not-yet-restored session silently saved nothing at
-    // all, online or offline). ProfileService.saveProfile() always caches
-    // locally and only skips its own Firestore push when there's no uid.
+    // No early return when signed out — ProfileService.saveProfile()
+    // always caches locally first, so the profile is saved even offline.
 
     final data = {
       'name': _nameController.text.trim(),
@@ -188,7 +190,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     };
 
     // Saves to the local cache immediately (so it's there next time even
-    // with zero internet) and pushes to Firestore in the background.
+    // with zero internet) and syncs to the ResQNet backend in the background.
     await context.read<ProfileService>().saveProfile(data);
 
     setState(() => _saving = false);
@@ -225,7 +227,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
     if (confirmed == true && mounted) {
+      final profile = context.read<ProfileService>();
+      final contacts = context.read<TrustedContactsService>();
+      final chat = context.read<CommunicationService>();
       await context.read<AuthService>().signOut();
+      // Also forget what is held in memory, not only on disk.
+      await Future.wait([profile.clearLocal(), contacts.clearLocal(), chat.clearLocalOutbox()]);
     }
   }
 
@@ -433,6 +440,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         icon: Icons.medication,
                         hint: 'e.g. Aspirin 100mg',
                         maxLines: 2),
+                    const MedicalSharingSetting(),
                     const SizedBox(height: 16),
                     _sectionTitle('Emergency Contact'),
                     _buildField(
@@ -673,6 +681,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         );
                       },
+                    ),
+                    const SizedBox(height: 16),
+                    _sectionTitle('Permissions'),
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: AppColors.cardDark,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: ListTile(
+                        leading: Icon(Icons.verified_user_outlined,
+                            color: AppColors.accentBlue),
+                        title: Text('Permissions',
+                            style: TextStyle(color: AppColors.textPrimary)),
+                        subtitle: Text(
+                            'Nearby devices, location, and notifications',
+                            style: TextStyle(
+                                color: AppColors.textSecondary, fontSize: 12)),
+                        trailing: Icon(Icons.chevron_right,
+                            color: AppColors.textSecondary),
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const PermissionsScreen()),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _sectionTitle('Responders'),
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: AppColors.cardDark,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: ListTile(
+                        leading: Icon(Icons.shield_outlined,
+                            color: AppColors.accentBlue),
+                        title: Text('Responder portal',
+                            style: TextStyle(color: AppColors.textPrimary)),
+                        subtitle: Text('Staff sign-in for ResQNet operations',
+                            style: TextStyle(
+                                color: AppColors.textSecondary, fontSize: 12)),
+                        trailing: Icon(Icons.chevron_right,
+                            color: AppColors.textSecondary),
+                        onTap: () => Navigator.pushNamed(
+                            context, AppRoutes.employeePortal),
+                      ),
                     ),
                     const SizedBox(height: 16),
                     SizedBox(

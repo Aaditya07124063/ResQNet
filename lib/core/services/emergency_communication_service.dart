@@ -6,6 +6,8 @@ import '../models/emergency_outbox_entry.dart';
 import '../network/api_client.dart';
 import '../network/api_exception.dart';
 import 'emergency_outbox_store.dart';
+import 'mesh_relay_store.dart';
+import 'sos_resolution_sync.dart';
 
 /// Trust tiers an emergency event can be in — kept explicitly distinct
 /// everywhere in this app's UI and logic. None of these implies any of
@@ -141,6 +143,17 @@ EmergencyTrustTier trustTierForReceivedMessage(EmergencyMessage message) {
 /// service just calls it correctly and repeatedly until it succeeds or
 /// terminally fails.
 class EmergencyCommunicationService extends ChangeNotifier {
+  EmergencyCommunicationService({@visibleForTesting MeshRelayStore? relayStore})
+      : _relayStore = relayStore ?? MeshRelayStore.instance;
+
+  final MeshRelayStore _relayStore;
+
+  int _lastGatewayUploadCount = 0;
+
+  /// Relayed SOS events this device uploaded as an Internet gateway in the
+  /// most recent sync.
+  int get lastGatewayUploadCount => _lastGatewayUploadCount;
+
   /// Hard ceiling on retry attempts per event (Section 20: never retry
   /// infinitely). Past this, the event is marked failed — still
   /// preserved locally (Section: never silently discard), just no longer
@@ -239,6 +252,8 @@ class EmergencyCommunicationService extends ChangeNotifier {
         final outcome = await _syncOne(entry);
         if (outcome) reconciled++;
       }
+      await _syncPendingResolutions();
+      _lastGatewayUploadCount = await _uploadRelayedEvents();
       _lastSyncSuccess = DateTime.now();
       _lastSyncFailureReason = null;
     } finally {
@@ -246,6 +261,69 @@ class EmergencyCommunicationService extends ChangeNotifier {
       _syncInProgress = false;
       notifyListeners();
     }
+  }
+
+  /// Retries cancellations of SOS events the backend already accepted but
+  /// has not yet been told are resolved (e.g. the user tapped "I'm safe"
+  /// while offline).
+  Future<void> _syncPendingResolutions() async {
+    final all = await EmergencyOutboxStore.instance.loadAll();
+    for (final entry in all) {
+      if (entry.resolutionSync == ResolutionSyncState.pending && entry.state == OutboxEntryState.serverAccepted) {
+        await pushSosResolution(entry.eventId);
+      }
+    }
+  }
+
+  /// Gateway step of store-and-forward: uploads other devices' signed SOS
+  /// events this device received over the mesh (A → … → this device →
+  /// backend). The backend verifies each origin signature and attributes
+  /// the event to its original sender, never to this uploader; several
+  /// gateways uploading the same event are de-duplicated server-side by
+  /// eventId. Requires this device to have a ResQNet session — without
+  /// one it simply keeps carrying the events over the mesh.
+  Future<int> _uploadRelayedEvents() async {
+    var uploaded = 0;
+    for (final record in await _relayStore.live()) {
+      if (record.gatewayState != GatewayUploadState.pending) continue;
+      final last = record.lastGatewayAttemptAt;
+      if (last != null) {
+        final backoff = _baseBackoff * (1 << record.gatewayAttempts.clamp(0, 6));
+        if (DateTime.now().difference(last) < backoff) continue;
+      }
+      final envelope = record.message.originEnvelope!;
+      GatewayUploadState next = GatewayUploadState.pending;
+      var countsAsAttempt = true;
+      try {
+        await ApiClient.instance.post(
+          '/sos',
+          auth: true,
+          body: {'eventId': record.eventId, 'originEnvelope': envelope.toJson()},
+        );
+        next = GatewayUploadState.uploaded;
+        uploaded++;
+        debugPrint('gateway_upload_success: ${record.eventId}');
+      } on ApiException catch (e) {
+        if (e.isUnauthorized) {
+          // Not signed in here: not a gateway right now, not a failure.
+          countsAsAttempt = false;
+        } else if (!e.isNetworkError && !e.isServerError) {
+          next = GatewayUploadState.rejected;
+          debugPrint('gateway_upload_rejected: ${record.eventId} ${e.code}');
+        }
+      } catch (_) {
+        // Unexpected failure: retry later.
+      }
+      await _relayStore.update(
+        record.eventId,
+        (r) => r.copyWith(
+          gatewayState: next,
+          gatewayAttempts: countsAsAttempt ? r.gatewayAttempts + 1 : r.gatewayAttempts,
+          lastGatewayAttemptAt: DateTime.now(),
+        ),
+      );
+    }
+    return uploaded;
   }
 
   int _priorityRank(EmergencyOutboxEntry entry) {
@@ -272,6 +350,18 @@ class EmergencyCommunicationService extends ChangeNotifier {
   /// pass), false otherwise (skipped due to backoff, stayed pending, or
   /// terminally failed).
   Future<bool> _syncOne(EmergencyOutboxEntry entry) async {
+    // Withdrawn before the backend could have seen it: never upload it,
+    // which would alert trusted contacts about an emergency that is over.
+    if (entry.isResolved && !entry.mayHaveReachedServer) {
+      await EmergencyOutboxStore.instance.update(
+        entry.eventId,
+        (e) => e.copyWith(
+          state: OutboxEntryState.cancelledBeforeUpload,
+          resolutionSync: ResolutionSyncState.notNeeded,
+        ),
+      );
+      return false;
+    }
     if (entry.isExpired) {
       await EmergencyOutboxStore.instance.upsert(
         entry.copyWith(state: OutboxEntryState.expired, lastError: 'Expired before reaching the backend'),
@@ -292,12 +382,14 @@ class EmergencyCommunicationService extends ChangeNotifier {
       if (DateTime.now().difference(last) < backoff) return false;
     }
 
-    final attempting = entry.copyWith(
-      state: OutboxEntryState.serverPending,
-      attempts: entry.attempts + 1,
-      lastAttemptAt: DateTime.now(),
+    await EmergencyOutboxStore.instance.update(
+      entry.eventId,
+      (current) => current.copyWith(
+        state: OutboxEntryState.serverPending,
+        attempts: current.attempts + 1,
+        lastAttemptAt: DateTime.now(),
+      ),
     );
-    await EmergencyOutboxStore.instance.upsert(attempting);
 
     try {
       final body = <String, dynamic>{'eventId': entry.eventId};
@@ -321,14 +413,16 @@ class EmergencyCommunicationService extends ChangeNotifier {
       final eventData = result['event'] as Map<String, dynamic>?;
       final verificationState = eventData?['originVerificationState'] as String?;
 
-      await EmergencyOutboxStore.instance.upsert(
-        attempting.copyWith(
+      final accepted = await EmergencyOutboxStore.instance.update(
+        entry.eventId,
+        (e) => e.copyWith(
           state: OutboxEntryState.serverAccepted,
           serverOriginVerificationState: verificationState,
-          lastError: null,
+          mayHaveReachedServer: true,
         ),
       );
       debugPrint('mesh_sync_success: ${entry.eventId} state=$verificationState');
+      if (accepted?.resolution != null) await pushSosResolution(entry.eventId);
       return true;
     } on ApiException catch (e) {
       if (e.isNetworkError || e.isServerError) {
@@ -338,8 +432,13 @@ class EmergencyCommunicationService extends ChangeNotifier {
         // Neither says anything about THIS request's content being
         // wrong, so neither is ever a terminal failure — both are
         // retried later exactly the same way.
-        await EmergencyOutboxStore.instance.upsert(
-          attempting.copyWith(state: OutboxEntryState.queued, lastError: e.message),
+        await EmergencyOutboxStore.instance.update(
+          entry.eventId,
+          (current) => current.copyWith(
+            state: OutboxEntryState.queued,
+            lastError: e.message,
+            mayHaveReachedServer: e.neverReachedServer ? null : true,
+          ),
         );
         _lastSyncFailureReason = e.message;
         return false;
@@ -349,15 +448,25 @@ class EmergencyCommunicationService extends ChangeNotifier {
       // origin) — terminal. Retrying an input the backend has already
       // definitively rejected would never succeed (same reasoning
       // CommunicationService._attemptSend already applies to a 403).
-      await EmergencyOutboxStore.instance.upsert(
-        attempting.copyWith(state: OutboxEntryState.failed, lastError: '${e.code}: ${e.message}'),
+      await EmergencyOutboxStore.instance.update(
+        entry.eventId,
+        (current) => current.copyWith(
+          state: OutboxEntryState.failed,
+          lastError: '${e.code}: ${e.message}',
+          mayHaveReachedServer: true,
+        ),
       );
       debugPrint('mesh_sync_failed: ${entry.eventId} ${e.code}');
       _lastSyncFailureReason = e.message;
       return false;
     } catch (e) {
-      await EmergencyOutboxStore.instance.upsert(
-        attempting.copyWith(state: OutboxEntryState.queued, lastError: e.toString()),
+      await EmergencyOutboxStore.instance.update(
+        entry.eventId,
+        (current) => current.copyWith(
+          state: OutboxEntryState.queued,
+          lastError: e.toString(),
+          mayHaveReachedServer: true,
+        ),
       );
       _lastSyncFailureReason = e.toString();
       return false;

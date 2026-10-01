@@ -2,9 +2,9 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// Persists the ResQNet backend's own access/refresh tokens (issued by
 /// POST /auth/google — see backend/src/services/sessionService.ts) in the
-/// platform keychain/keystore, never in SharedPreferences. This is
-/// separate from Firebase's own token handling, which FirebaseAuth already
-/// manages internally for the existing (still-active) sign-in flows.
+/// platform keychain/keystore, never in SharedPreferences. These are the
+/// app's only sign-in credentials (Google and phone sign-in both produce a
+/// ResQNet session; there is no Firebase session).
 class TokenStorage {
   TokenStorage._();
   static final TokenStorage instance = TokenStorage._();

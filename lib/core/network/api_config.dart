@@ -9,11 +9,14 @@ enum ResQNetEnvironment { development, vps, production }
 class ApiConfig {
   const ApiConfig._();
 
-  /// Selectable at build time with --dart-define=API_ENV=vps (or
-  /// `production`) so a test/beta build doesn't require hand-editing this
-  /// source file — defaults to `development` when omitted. (Dart's const
-  /// evaluator doesn't allow a switch/if here, hence the nested ternary.)
-  static const String _rawEnv = String.fromEnvironment('API_ENV', defaultValue: 'development');
+  /// Selectable at build time with --dart-define=API_ENV=development|vps|
+  /// production. When omitted, release builds use production
+  /// (https://api.resqnet.co) and debug/profile builds use development, so
+  /// a release can never ship pointing at a developer machine. (Dart's
+  /// const evaluator doesn't allow a switch/if here, hence the ternaries.)
+  static const bool _isReleaseBuild = bool.fromEnvironment('dart.vm.product');
+  static const String _rawEnv =
+      String.fromEnvironment('API_ENV', defaultValue: _isReleaseBuild ? 'production' : 'development');
   static const ResQNetEnvironment current = _rawEnv == 'vps'
       ? ResQNetEnvironment.vps
       : _rawEnv == 'production'

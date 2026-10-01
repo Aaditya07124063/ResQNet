@@ -24,6 +24,14 @@ import '../../core/services/safe_zone_service.dart';
 import '../../core/services/seismic_service.dart';
 import '../../core/services/trusted_contacts_service.dart';
 import '../../core/utils/permission_handler.dart' as perms;
+import '../../core/notifications/notification_catalog.dart';
+import '../../core/services/connectivity_status_service.dart';
+import '../../core/services/sos_dispatch_service.dart';
+import '../../core/services/sos_service.dart';
+import '../permissions/permissions_screen.dart';
+import '../sos/sos_actions.dart';
+import 'notification_navigation.dart';
+import 'widgets/sos_home_panel.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/emergency_contacts/emergency_contacts_screen.dart';
 import '../../features/sos_history/sos_history_screen.dart';
@@ -31,7 +39,6 @@ import '../../features/communication/conversations_list_screen.dart';
 import '../../features/emergency/nearby_emergency_screen.dart';
 import '../crash_countdown/crash_countdown_dialog.dart';
 import '../seismic/earthquake_alert_dialog.dart';
-import '../../widgets/sos_button.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -44,7 +51,20 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _crashDialogOpen = false;
   bool _quakeDialogOpen = false;
   late final AppShortcutService _shortcutService;
+  late final NotificationService _notifications;
   StreamSubscription? _nearbySosSubscription;
+  StreamSubscription? _meshIncomingSubscription;
+
+  /// Undo actions for every listener this screen registers on app-lifetime
+  /// services, so a re-created HomeScreen (e.g. after signing out and in
+  /// again) never leaves the previous instance's listeners running.
+  final List<VoidCallback> _removeListeners = [];
+
+  void _listen(Listenable service, VoidCallback listener) {
+    service.addListener(listener);
+    _removeListeners.add(() => service.removeListener(listener));
+  }
+  NotificationSpec? _detectionNotification;
 
   @override
   void initState() {
@@ -67,6 +87,10 @@ class _HomeScreenState extends State<HomeScreen> {
     // button already opens (below), with its own existing confirm-then-
     // 5-second-cancellable-countdown gate — nothing here sends anything
     // by itself.
+    _notifications = NotificationService();
+    _notifications.pendingTap.addListener(_handleNotificationTap);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _handleNotificationTap());
+
     _shortcutService = context.read<AppShortcutService>();
     _shortcutService.pendingAction.addListener(_handlePendingShortcutAction);
     // Covers a cold start via the shortcut, where the value may already
@@ -83,7 +107,16 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     _shortcutService.consume();
-    Navigator.pushNamed(context, AppRoutes.sos);
+    // Same countdown as the Home button — the shortcut never sends by itself.
+    startSos(context);
+  }
+
+  void _handleNotificationTap() {
+    if (!mounted) return;
+    final tap = _notifications.pendingTap.value;
+    if (tap == null) return;
+    _notifications.pendingTap.value = null;
+    openNotificationDestination(context, tap);
   }
 
   void _handleNearbySosEvent(Map<String, dynamic> event) {
@@ -113,13 +146,30 @@ class _HomeScreenState extends State<HomeScreen> {
       _handlePendingShortcutAction,
     );
     _nearbySosSubscription?.cancel();
+    _meshIncomingSubscription?.cancel();
+    _notifications.pendingTap.removeListener(_handleNotificationTap);
+    for (final remove in _removeListeners) {
+      remove();
+    }
     super.dispose();
   }
 
   Future<void> _init() async {
-    await perms.requestAllPermissions();
+    context.read<ConnectivityStatusService>().start();
+
+    // Explain before the system prompts, once. SOS never waits on this.
+    try {
+      if (!await perms.permissionsExplained()) {
+        if (!mounted) return;
+        await showPermissionExplainer(context);
+        await perms.markPermissionsExplained();
+      }
+      await perms.requestAllPermissions();
+    } catch (e) {
+      debugPrint('Permission request error: $e');
+    }
     if (!mounted) return;
-    NotificationService().initialize().catchError(
+    _notifications.initialize().catchError(
       (e) => debugPrint('Notification init error: $e'),
     );
     // Cryptographic device identity (Phase 2): ensures a local signing
@@ -145,6 +195,39 @@ class _HomeScreenState extends State<HomeScreen> {
     meshService.startMeshNetwork().catchError(
       (e) => debugPrint('Mesh start error: $e'),
     );
+
+    // Offline alerts: an emergency received over the mesh raises a local
+    // notification (deduplicated with any push for the same event).
+    final gatewaySync = context.read<EmergencyCommunicationService>();
+    _meshIncomingSubscription = meshService.incomingMessages.listen((message) {
+      // If this phone is online, act as a gateway for the new emergency
+      // now rather than waiting for the next periodic sync.
+      if (message.originEnvelope != null && !message.isCancellation) {
+        gatewaySync.syncPendingEvents().catchError((Object e) => debugPrint('Gateway sync error: $e'));
+      }
+      final target = message.cancelsEventId;
+      _notifications.notifyMeshMessage(
+        message,
+        cancellationVerified: target != null && (meshService.cancellationFor(target)?.verified ?? false),
+      );
+    });
+
+    // An SOS that was active when the app was closed stays active and keeps
+    // being offered to devices that come into range.
+    final sosService = context.read<SosService>();
+    Future<void> resumeSos() => SosDispatchService.resumeActive(sosService, meshService)
+        .catchError((Object e) => debugPrint('Resume active SOS failed: $e'));
+    if (sosService.isRestored) {
+      resumeSos();
+    } else {
+      late final VoidCallback onRestored;
+      onRestored = () {
+        if (!sosService.isRestored) return;
+        sosService.removeListener(onRestored);
+        resumeSos();
+      };
+      _listen(sosService, onRestored);
+    }
 
     // ResQNet-native chat: connects the realtime WebSocket transport and
     // retries any messages that failed to send in a previous session.
@@ -176,7 +259,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // Absorb any flood/fire/etc. hazards, and any safe zones/safe routes
     // ("this way is safe") — peer-reported or relayed from an official
     // feed — that arrive over the mesh, offline or online.
-    meshService.addListener(() {
+    _listen(meshService, () {
       hazardService.syncFromMesh(meshService.messages);
       safeZoneService.syncFromMesh(meshService.messages);
     });
@@ -196,30 +279,53 @@ class _HomeScreenState extends State<HomeScreen> {
     // Vehicle crash detection
     final crashService = context.read<CrashDetectionService>();
     crashService.start();
-    crashService.addListener(() {
+    _listen(crashService, () {
       if (crashService.crashDetected && mounted && !_crashDialogOpen) {
         _crashDialogOpen = true;
+        _showDetectionNotification('crash', crashService.confirmationCountdown.inSeconds);
         showDialog(
           context: context,
           barrierDismissible: false,
           builder: (_) => const CrashCountdownDialog(),
-        ).then((_) => _crashDialogOpen = false);
+        ).then((_) {
+          _crashDialogOpen = false;
+          _dismissDetectionNotification();
+        });
       }
     });
 
     // Earthquake (seismic P-wave) detection
     final seismicService = context.read<SeismicService>();
     seismicService.start();
-    seismicService.addListener(() {
+    _listen(seismicService, () {
       if (seismicService.quakeDetected && mounted && !_quakeDialogOpen) {
         _quakeDialogOpen = true;
+        _showDetectionNotification('earthquake', seismicService.confirmationCountdown.inSeconds);
         showDialog(
           context: context,
           barrierDismissible: false,
           builder: (_) => const EarthquakeAlertDialog(),
-        ).then((_) => _quakeDialogOpen = false);
+        ).then((_) {
+          _quakeDialogOpen = false;
+          _dismissDetectionNotification();
+        });
       }
     });
+  }
+
+  /// The detection countdown runs even while ResQNet is in the background
+  /// (foreground service); this notification is how the user finds out
+  /// and gets back in to cancel it.
+  void _showDetectionNotification(String detection, int seconds) {
+    final spec = detectionWarningSpec(detection: detection, seconds: seconds);
+    _detectionNotification = spec;
+    _notifications.show(spec);
+  }
+
+  void _dismissDetectionNotification() {
+    final spec = _detectionNotification;
+    _detectionNotification = null;
+    if (spec != null) _notifications.dismiss(spec);
   }
 
   Future<void> _sendImSafe() async {
@@ -264,7 +370,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final mesh = context.watch<MeshService>();
-    final location = context.watch<LocationService>();
 
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
@@ -284,207 +389,95 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         actions: [
           IconButton(
+            tooltip: 'Profile and settings',
             icon: Icon(Icons.account_circle,
                 color: AppColors.textSecondary, size: 28),
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => ProfileScreen()),
+              MaterialPageRoute(builder: (_) => const ProfileScreen()),
             ),
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            const SizedBox(height: 24),
-            Center(
-              child: SosButton(
-                isActive: false,
-                onPressed: () => Navigator.pushNamed(context, AppRoutes.sos),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text('Tap to send SOS',
-                style:
-                    TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SosHomePanel(),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
                 onPressed: _sendImSafe,
-                icon: const Icon(Icons.check_circle,
-                    color: AppColors.connectedGreen),
+                icon: const Icon(Icons.check_circle, color: AppColors.connectedGreen),
                 label: const Text(
                   "I AM SAFE — tell everyone nearby",
-                  style: TextStyle(
-                      color: AppColors.connectedGreen,
-                      fontWeight: FontWeight.bold),
+                  style: TextStyle(color: AppColors.connectedGreen, fontWeight: FontWeight.bold),
                 ),
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: AppColors.connectedGreen),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                  minimumSize: const Size.fromHeight(52),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),
-            ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                _StatusChip(
-                  label: '${mesh.connectedCount} Devices',
-                  icon: Icons.wifi,
-                  color: mesh.connectedCount > 0
-                      ? AppColors.connectedGreen
-                      : AppColors.textSecondary,
-                  subtitle:
-                      mesh.connectedCount > 0 ? 'Connected' : 'No peers',
-                  onTap: () =>
-                      Navigator.pushNamed(context, AppRoutes.mesh),
-                ),
-                const SizedBox(width: 8),
-                _StatusChip(
-                  label: location.currentPosition != null
-                      ? 'GPS ON'
-                      : 'GPS OFF',
-                  icon: Icons.gps_fixed,
-                  color: location.currentPosition != null
-                      ? AppColors.connectedGreen
-                      : AppColors.textSecondary,
-                  subtitle: location.currentPosition != null
-                      ? '${location.currentPosition!.latitude.toStringAsFixed(2)}, ${location.currentPosition!.longitude.toStringAsFixed(2)}'
-                      : 'No signal',
-                  onTap: () =>
-                      Navigator.pushNamed(context, AppRoutes.map),
-                ),
-                const SizedBox(width: 8),
-                _StatusChip(
-                  label: mesh.isAdvertising ? 'Mesh ON' : 'Mesh OFF',
-                  icon: Icons.hub,
-                  color: mesh.isAdvertising
-                      ? AppColors.connectedGreen
-                      : AppColors.textSecondary,
-                  subtitle: mesh.isDiscovering ? 'Scanning...' : 'Idle',
-                  onTap: () =>
-                      Navigator.pushNamed(context, AppRoutes.mesh),
-                ),
-              ],
-            ),
-            const SizedBox(height: 32),
-            _ActionButton(
-              icon: Icons.map,
-              label: 'Emergency Map',
-              subtitle: 'View alerts on map',
-              color: AppColors.accentBlue,
-              onTap: () => Navigator.pushNamed(context, AppRoutes.map),
-            ),
-            const SizedBox(height: 12),
-            _ActionButton(
-              icon: Icons.hub,
-              label: 'Mesh Network',
-              subtitle:
-                  '${mesh.connectedCount} connected · ${mesh.discoveredDevices.length} nearby',
-              color: AppColors.primaryOrange,
-              onTap: () => Navigator.pushNamed(context, AppRoutes.mesh),
-            ),
-            const SizedBox(height: 12),
-            _ActionButton(
-              icon: Icons.dashboard,
-              label: 'Dashboard',
-              subtitle: '${mesh.messages.length} messages received',
-              color: const Color(0xFF6A1B9A),
-              onTap: () =>
-                  Navigator.pushNamed(context, AppRoutes.dashboard),
-            ),
-            const SizedBox(height: 12),
-            _ActionButton(
-              icon: Icons.contact_phone,
-              label: 'Emergency Contacts',
-              subtitle: 'Call local emergency services',
-              color: AppColors.emergencyRed,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const EmergencyContactsScreen()),
+              const SizedBox(height: 24),
+              _ActionButton(
+                icon: Icons.map,
+                label: 'Emergency Map',
+                subtitle: 'Hazards, safe zones, and offline maps',
+                color: AppColors.accentBlue,
+                onTap: () => Navigator.pushNamed(context, AppRoutes.map),
               ),
-            ),
-            const SizedBox(height: 12),
-            _ActionButton(
-              icon: Icons.history,
-              label: 'SOS History',
-              subtitle: 'View your past SOS alerts',
-              color: AppColors.accentBlue,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const SosHistoryScreen()),
+              const SizedBox(height: 12),
+              _ActionButton(
+                icon: Icons.hub,
+                label: 'Offline Mesh',
+                subtitle:
+                    '${mesh.connectedCount} connected · ${mesh.discoveredDevices.length} nearby · ${mesh.messages.length} alerts',
+                color: AppColors.primaryOrange,
+                onTap: () => Navigator.pushNamed(context, AppRoutes.mesh),
               ),
-            ),
-            const SizedBox(height: 12),
-            _ActionButton(
-              icon: Icons.chat_bubble_outline,
-              label: 'Messages',
-              subtitle: 'Chat with a trusted contact on ResQNet',
-              color: AppColors.connectedGreen,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const ConversationsListScreen()),
+              const SizedBox(height: 12),
+              _ActionButton(
+                icon: Icons.chat_bubble_outline,
+                label: 'Messages',
+                subtitle: 'Chat with a trusted contact on ResQNet',
+                color: AppColors.connectedGreen,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ConversationsListScreen()),
+                ),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusChip extends StatelessWidget {
-  final String label;
-  final String subtitle;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _StatusChip({
-    required this.label,
-    required this.icon,
-    required this.color,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding:
-              const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-          decoration: BoxDecoration(
-            color: AppColors.cardDark,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: color.withOpacity(0.4)),
-          ),
-          child: Column(
-            children: [
-              Icon(icon, color: color, size: 18),
-              const SizedBox(height: 4),
-              Text(label,
-                  style: TextStyle(
-                      color: color,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center),
-              const SizedBox(height: 2),
-              Text(subtitle,
-                  style: TextStyle(
-                      color: AppColors.textSecondary, fontSize: 9),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 12),
+              _ActionButton(
+                icon: Icons.history,
+                label: 'SOS History',
+                subtitle: 'Your past SOS alerts, including offline ones',
+                color: AppColors.accentBlue,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SosHistoryScreen()),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _ActionButton(
+                icon: Icons.contact_phone,
+                label: 'Emergency Contacts',
+                subtitle: 'Call local emergency services',
+                color: AppColors.emergencyRed,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const EmergencyContactsScreen()),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _ActionButton(
+                icon: Icons.dashboard,
+                label: 'Dashboard',
+                subtitle: 'All alerts received over the mesh',
+                color: const Color(0xFF6A1B9A),
+                onTap: () => Navigator.pushNamed(context, AppRoutes.dashboard),
+              ),
             ],
           ),
         ),
@@ -510,21 +503,25 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      label: '$label. $subtitle',
+      excludeSemantics: true,
+      child: GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: AppColors.cardDark,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.3)),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
         ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.15),
+                color: color.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(icon, color: color, size: 24),
@@ -549,6 +546,7 @@ class _ActionButton extends StatelessWidget {
                 color: AppColors.textSecondary),
           ],
         ),
+      ),
       ),
     );
   }

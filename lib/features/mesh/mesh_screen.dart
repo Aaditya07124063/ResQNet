@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/services/mesh_service.dart';
 import '../../core/services/ai_service.dart';
@@ -11,6 +10,7 @@ import '../../core/services/voice_note_service.dart';
 import '../../core/models/emergency_message.dart';
 import '../../widgets/emergency_card.dart';
 import '../../widgets/device_tile.dart';
+import '../auth/auth_service.dart';
 
 class MeshScreen extends StatefulWidget {
   const MeshScreen({super.key});
@@ -43,6 +43,7 @@ class _MeshScreenState extends State<MeshScreen>
     final ai = context.read<AiService>();
     final location = context.read<LocationService>();
     final profile = context.read<ProfileService>();
+    final auth = context.read<AuthService>();
 
     if (profile.name.isEmpty) {
       await profile.loadProfile();
@@ -50,10 +51,11 @@ class _MeshScreenState extends State<MeshScreen>
 
     final type = ai.classifyEmergency(text);
     final priority = ai.assessPriority(text, type);
+    final senderId = await auth.currentSenderId();
 
     final msg = EmergencyMessage(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      senderId: FirebaseAuth.instance.currentUser?.uid ?? 'anonymous',
+      senderId: senderId,
       senderName: _isAnonymous
           ? 'Anonymous'
           : (profile.name.isNotEmpty ? profile.name : 'Unknown'),
@@ -63,9 +65,6 @@ class _MeshScreenState extends State<MeshScreen>
       latitude: location.currentPosition?.latitude,
       longitude: location.currentPosition?.longitude,
       timestamp: DateTime.now(),
-      bloodGroup: _isAnonymous ? null : profile.bloodGroup,
-      allergies: _isAnonymous ? null : profile.allergies,
-      medications: _isAnonymous ? null : profile.medications,
     );
 
     mesh.broadcastMessage(msg);
@@ -76,6 +75,7 @@ class _MeshScreenState extends State<MeshScreen>
     final mesh = context.read<MeshService>();
     final location = context.read<LocationService>();
     final profile = context.read<ProfileService>();
+    final auth = context.read<AuthService>();
     final pos = location.currentPosition;
 
     if (pos == null) {
@@ -88,10 +88,11 @@ class _MeshScreenState extends State<MeshScreen>
     if (profile.name.isEmpty) {
       await profile.loadProfile();
     }
+    final senderId = await auth.currentSenderId();
 
     final msg = EmergencyMessage(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      senderId: FirebaseAuth.instance.currentUser?.uid ?? 'anonymous',
+      senderId: senderId,
       senderName: _isAnonymous
           ? 'Anonymous'
           : (profile.name.isNotEmpty ? profile.name : 'Unknown'),
@@ -101,9 +102,6 @@ class _MeshScreenState extends State<MeshScreen>
       latitude: pos.latitude,
       longitude: pos.longitude,
       timestamp: DateTime.now(),
-      bloodGroup: _isAnonymous ? null : profile.bloodGroup,
-      allergies: _isAnonymous ? null : profile.allergies,
-      medications: _isAnonymous ? null : profile.medications,
     );
 
     mesh.broadcastMessage(msg);
@@ -130,7 +128,9 @@ class _MeshScreenState extends State<MeshScreen>
     final started = await voice.startRecording();
     if (!started && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Microphone permission needed to record a voice note')),
+        const SnackBar(
+            content:
+                Text('Microphone permission needed to record a voice note')),
       );
     }
   }
@@ -143,13 +143,15 @@ class _MeshScreenState extends State<MeshScreen>
     final mesh = context.read<MeshService>();
     final location = context.read<LocationService>();
     final profile = context.read<ProfileService>();
+    final auth = context.read<AuthService>();
     if (profile.name.isEmpty) {
       await profile.loadProfile();
     }
+    final senderId = await auth.currentSenderId();
 
     final msg = EmergencyMessage(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      senderId: FirebaseAuth.instance.currentUser?.uid ?? 'anonymous',
+      senderId: senderId,
       senderName: _isAnonymous
           ? 'Anonymous'
           : (profile.name.isNotEmpty ? profile.name : 'Unknown'),
@@ -159,9 +161,6 @@ class _MeshScreenState extends State<MeshScreen>
       latitude: location.currentPosition?.latitude,
       longitude: location.currentPosition?.longitude,
       timestamp: DateTime.now(),
-      bloodGroup: _isAnonymous ? null : profile.bloodGroup,
-      allergies: _isAnonymous ? null : profile.allergies,
-      medications: _isAnonymous ? null : profile.medications,
       audioBase64: result.base64,
       audioDurationSeconds: result.durationSeconds,
     );
@@ -228,8 +227,7 @@ class _MeshScreenState extends State<MeshScreen>
             icon: Icon(Icons.translate, color: AppColors.textPrimary),
             onSelected: (lang) => setState(() => _selectedLanguage = lang),
             itemBuilder: (_) => AiService.supportedLanguages.keys
-                .map((lang) =>
-                    PopupMenuItem(value: lang, child: Text(lang)))
+                .map((lang) => PopupMenuItem(value: lang, child: Text(lang)))
                 .toList(),
           ),
         ],
@@ -249,16 +247,13 @@ class _MeshScreenState extends State<MeshScreen>
           Container(
             width: double.infinity,
             color: AppColors.emergencyRed.withOpacity(0.15),
-            padding:
-                const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
             child: const Text(
               '⚠️ For emergency use only',
-              style:
-                  TextStyle(color: AppColors.emergencyRed, fontSize: 12),
+              style: TextStyle(color: AppColors.emergencyRed, fontSize: 12),
               textAlign: TextAlign.center,
             ),
           ),
-
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -272,8 +267,8 @@ class _MeshScreenState extends State<MeshScreen>
                                 color: AppColors.textSecondary, size: 48),
                             const SizedBox(height: 12),
                             Text('No messages yet',
-                                style: TextStyle(
-                                    color: AppColors.textSecondary)),
+                                style:
+                                    TextStyle(color: AppColors.textSecondary)),
                             const SizedBox(height: 8),
                             Text('Send an SOS to broadcast a message',
                                 style: TextStyle(
@@ -287,26 +282,21 @@ class _MeshScreenState extends State<MeshScreen>
                         itemBuilder: (_, i) {
                           final msg = mesh.messages[i];
                           final langCode =
-                              AiService.supportedLanguages[
-                                      _selectedLanguage] ??
+                              AiService.supportedLanguages[_selectedLanguage] ??
                                   'en';
                           if (langCode == 'en') {
                             return EmergencyCard(message: msg);
                           }
                           return FutureBuilder<String>(
-                            future: ai.translateMessage(
-                                msg.message, langCode),
+                            future: ai.translateMessage(msg.message, langCode),
                             builder: (_, snap) {
-                              final translated =
-                                  snap.data ?? msg.message;
+                              final translated = snap.data ?? msg.message;
                               return EmergencyCard(
-                                  message: msg.copyWith(
-                                      message: translated));
+                                  message: msg.copyWith(message: translated));
                             },
                           );
                         },
                       ),
-
                 Platform.isIOS
                     ? Center(
                         child: Padding(
@@ -314,20 +304,17 @@ class _MeshScreenState extends State<MeshScreen>
                           child: Text(
                             'iOS uses Multipeer Connectivity automatically.\nKeep Bluetooth and WiFi ON.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(
-                                color: AppColors.textSecondary),
+                            style: TextStyle(color: AppColors.textSecondary),
                           ),
                         ),
                       )
                     : mesh.discoveredDevices.isEmpty
                         ? Center(
                             child: Column(
-                              mainAxisAlignment:
-                                  MainAxisAlignment.center,
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(Icons.wifi_off,
-                                    color: AppColors.textSecondary,
-                                    size: 48),
+                                    color: AppColors.textSecondary, size: 48),
                                 const SizedBox(height: 12),
                                 Text('No nearby devices found',
                                     style: TextStyle(
@@ -351,19 +338,17 @@ class _MeshScreenState extends State<MeshScreen>
                               final device = mesh.discoveredDevices[i];
                               return DeviceTile(
                                 device: device,
-                                onConnect: () => mesh
-                                    .connectToDevice(device.deviceId),
+                                onConnect: () =>
+                                    mesh.connectToDevice(device.deviceId),
                               );
                             },
                           ),
               ],
             ),
           ),
-
           Container(
             color: AppColors.surfaceDark,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
@@ -380,12 +365,10 @@ class _MeshScreenState extends State<MeshScreen>
               ),
             ),
           ),
-
           Container(
             width: double.infinity,
             color: AppColors.surfaceDark,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Row(
               children: [
                 Icon(
@@ -418,14 +401,13 @@ class _MeshScreenState extends State<MeshScreen>
               ],
             ),
           ),
-
           Consumer<VoiceNoteService>(
             builder: (context, voice, _) => voice.isRecording
                 ? Container(
                     width: double.infinity,
                     color: Colors.red.shade900,
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 6, horizontal: 16),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
                     child: const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -441,11 +423,9 @@ class _MeshScreenState extends State<MeshScreen>
                   )
                 : const SizedBox.shrink(),
           ),
-
           Container(
             color: AppColors.surfaceDark,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               children: [
                 Tooltip(
@@ -482,9 +462,8 @@ class _MeshScreenState extends State<MeshScreen>
                     child: Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: ai.isListening
-                            ? Colors.green
-                            : AppColors.cardDark,
+                        color:
+                            ai.isListening ? Colors.green : AppColors.cardDark,
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
@@ -499,12 +478,10 @@ class _MeshScreenState extends State<MeshScreen>
                 Expanded(
                   child: TextField(
                     controller: _messageController,
-                    style:
-                        TextStyle(color: AppColors.textPrimary),
+                    style: TextStyle(color: AppColors.textPrimary),
                     decoration: InputDecoration(
                       hintText: 'Type emergency message...',
-                      hintStyle: TextStyle(
-                          color: AppColors.textSecondary),
+                      hintStyle: TextStyle(color: AppColors.textSecondary),
                       filled: true,
                       fillColor: AppColors.cardDark,
                       border: OutlineInputBorder(
@@ -525,8 +502,8 @@ class _MeshScreenState extends State<MeshScreen>
                       color: AppColors.emergencyRed,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.send,
-                        color: Colors.white, size: 22),
+                    child:
+                        const Icon(Icons.send, color: Colors.white, size: 22),
                   ),
                 ),
               ],

@@ -7,7 +7,6 @@ const Strategy _strategy = Strategy.P2P_CLUSTER;
 Function(String, dynamic)? _onConnectionInitiatedCallback;
 Function(String, bool)? _onConnectionResultCallback;
 Function(String) ? _onDisconnectedCallback;
-Function(String, Uint8List)? _onPayloadReceivedCallback;
 
 Future<void> startAdvertising(
   String userName, {
@@ -36,8 +35,6 @@ Future<void> startDiscovery(
   required Function(String?) onEndpointLost,
   required Function(String, Uint8List) onPayloadReceived,
 }) async {
-  _onPayloadReceivedCallback = onPayloadReceived;
-
   await Nearby().startDiscovery(
     userName,
     _strategy,

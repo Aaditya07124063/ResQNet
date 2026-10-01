@@ -10,6 +10,7 @@ class SosAlert {
   final String message;
   final double? latitude;
   final double? longitude;
+  final double? locationAccuracyM;
   final DateTime timestamp;
   SosStatus status;
 
@@ -21,6 +22,7 @@ class SosAlert {
     required this.message,
     this.latitude,
     this.longitude,
+    this.locationAccuracyM,
     required this.timestamp,
     this.status = SosStatus.active,
   });
@@ -33,6 +35,7 @@ class SosAlert {
         'message': message,
         'latitude': latitude,
         'longitude': longitude,
+        'locationAccuracyM': locationAccuracyM,
         'timestamp': timestamp.millisecondsSinceEpoch,
         'status': status.name,
       };
@@ -47,6 +50,7 @@ class SosAlert {
         message: json['message'],
         latitude: json['latitude']?.toDouble(),
         longitude: json['longitude']?.toDouble(),
+        locationAccuracyM: (json['locationAccuracyM'] as num?)?.toDouble(),
         timestamp:
             DateTime.fromMillisecondsSinceEpoch(json['timestamp'] as int),
         status: SosStatus.values.firstWhere(

@@ -43,12 +43,6 @@ class EmergencyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool hasMedical =
-        (message.bloodGroup != null && message.bloodGroup!.isNotEmpty) ||
-            (message.allergies != null && message.allergies!.isNotEmpty) ||
-            (message.medications != null &&
-                message.medications!.isNotEmpty);
-
     return Card(
       color: AppColors.cardDark,
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -115,7 +109,7 @@ class EmergencyCard extends StatelessWidget {
                   style: TextStyle(
                       color: AppColors.textSecondary, fontSize: 13),
                 ),
-                if (message.audioBase64 != null) ...[
+                if (message.audioBase64?.isNotEmpty ?? false) ...[
                   const SizedBox(height: 8),
                   Consumer<VoiceNoteService>(
                     builder: (context, voice, _) {
@@ -151,43 +145,6 @@ class EmergencyCard extends StatelessWidget {
                         ),
                       );
                     },
-                  ),
-                ],
-                if (hasMedical) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.white24),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Medical Info',
-                            style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 4),
-                        if (message.bloodGroup != null &&
-                            message.bloodGroup!.isNotEmpty)
-                          _medicalRow(Icons.bloodtype,
-                              'Blood Group: ${message.bloodGroup}',
-                              Colors.red),
-                        if (message.allergies != null &&
-                            message.allergies!.isNotEmpty)
-                          _medicalRow(Icons.warning_amber,
-                              'Allergies: ${message.allergies}',
-                              Colors.orange),
-                        if (message.medications != null &&
-                            message.medications!.isNotEmpty)
-                          _medicalRow(Icons.medication,
-                              'Medications: ${message.medications}',
-                              Colors.blue),
-                      ],
-                    ),
                   ),
                 ],
                 const SizedBox(height: 8),
@@ -261,20 +218,4 @@ class EmergencyCard extends StatelessWidget {
     );
   }
 
-  Widget _medicalRow(IconData icon, String text, Color color) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 2),
-      child: Row(
-        children: [
-          Icon(icon, size: 12, color: color),
-          const SizedBox(width: 4),
-          Expanded(
-            child: Text(text,
-                style: TextStyle(fontSize: 11, color: color),
-                overflow: TextOverflow.ellipsis),
-          ),
-        ],
-      ),
-    );
-  }
 }

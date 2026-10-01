@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'origin_envelope.dart';
 
+/// The exact signed message text of a cancellation notice for [eventId];
+/// binds the notice's signature to the SOS it cancels.
+String cancellationSignedText(String eventId) => 'resqnet-cancel:$eventId';
+
 enum EmergencyType {
   medical,
   fire,
@@ -30,9 +34,12 @@ class EmergencyMessage {
   final DateTime timestamp;
   final int hopCount;
   final bool isRelayed;
-  final String? bloodGroup;
-  final String? allergies;
-  final String? medications;
+  // Deliberately no medical fields. Mesh payloads are readable by any
+  // nearby phone and every field outside `originEnvelope` is unsigned, so
+  // blood group / allergies / medications are never carried as separate
+  // fields. Medical details the user opted in to share with an automatic
+  // SOS travel only inside the signed message text (see
+  // SosService.triggerSos) — never on ordinary mesh messages.
   final int? batteryLevel;
   // A recorded voice note, base64-encoded so it travels inside this same
   // message — over the mesh (offline) exactly like Firestore (online),
@@ -93,6 +100,15 @@ class EmergencyMessage {
   /// device doesn't need to verify its own signature).
   final bool originVerifiedLocally;
 
+  /// Set only on an SOS cancellation notice: the `id` of the SOS event the
+  /// sender is withdrawing ("I'm safe" / false alarm). A cancellation is its
+  /// own mesh event (own `id`, relayed and deduplicated like any other);
+  /// receivers only treat it as authoritative when its signing key matches
+  /// the original SOS's (see MeshService.cancellationFor).
+  final String? cancelsEventId;
+
+  bool get isCancellation => cancelsEventId != null;
+
   static const int defaultMaxHops = 8;
 
   EmergencyMessage({
@@ -107,9 +123,6 @@ class EmergencyMessage {
     required this.timestamp,
     this.hopCount = 0,
     this.isRelayed = false,
-    this.bloodGroup,
-    this.allergies,
-    this.medications,
     this.batteryLevel,
     this.audioBase64,
     this.audioDurationSeconds,
@@ -119,6 +132,7 @@ class EmergencyMessage {
     this.relayPath = const [],
     this.expiresAt,
     this.originVerifiedLocally = false,
+    this.cancelsEventId,
   });
 
   Map<String, dynamic> toJson() => {
@@ -133,9 +147,6 @@ class EmergencyMessage {
         'timestamp': timestamp.millisecondsSinceEpoch,
         'hopCount': hopCount,
         'isRelayed': isRelayed,
-        'bloodGroup': bloodGroup,
-        'allergies': allergies,
-        'medications': medications,
         'batteryLevel': batteryLevel,
         'audioBase64': audioBase64,
         'audioDurationSeconds': audioDurationSeconds,
@@ -144,8 +155,12 @@ class EmergencyMessage {
         'maxHops': maxHops,
         'relayPath': relayPath,
         'expiresAt': expiresAt?.toIso8601String(),
+        if (cancelsEventId != null) 'cancelsEventId': cancelsEventId,
       };
 
+  /// Unknown keys are ignored — including `bloodGroup` / `allergies` /
+  /// `medications` sent by older app versions, which are therefore neither
+  /// shown nor relayed onward by this version.
   factory EmergencyMessage.fromJson(Map<String, dynamic> json) =>
       EmergencyMessage(
         id: json['id'],
@@ -164,9 +179,6 @@ class EmergencyMessage {
             DateTime.fromMillisecondsSinceEpoch(json['timestamp'] as int),
         hopCount: json['hopCount'] ?? 0,
         isRelayed: json['isRelayed'] ?? false,
-        bloodGroup: json['bloodGroup'],
-        allergies: json['allergies'],
-        medications: json['medications'],
         batteryLevel: json['batteryLevel'],
         audioBase64: json['audioBase64'],
         audioDurationSeconds: json['audioDurationSeconds'],
@@ -177,6 +189,7 @@ class EmergencyMessage {
         maxHops: json['maxHops'] as int? ?? defaultMaxHops,
         relayPath: (json['relayPath'] as List?)?.cast<String>() ?? const [],
         expiresAt: json['expiresAt'] != null ? DateTime.parse(json['expiresAt'] as String) : null,
+        cancelsEventId: json['cancelsEventId'] as String?,
       );
 
   EmergencyMessage copyWith({
@@ -191,9 +204,6 @@ class EmergencyMessage {
     DateTime? timestamp,
     int? hopCount,
     bool? isRelayed,
-    String? bloodGroup,
-    String? allergies,
-    String? medications,
     int? batteryLevel,
     String? audioBase64,
     int? audioDurationSeconds,
@@ -203,6 +213,7 @@ class EmergencyMessage {
     List<String>? relayPath,
     DateTime? expiresAt,
     bool? originVerifiedLocally,
+    String? cancelsEventId,
   }) =>
       EmergencyMessage(
         id: id ?? this.id,
@@ -216,9 +227,6 @@ class EmergencyMessage {
         timestamp: timestamp ?? this.timestamp,
         hopCount: hopCount ?? this.hopCount,
         isRelayed: isRelayed ?? this.isRelayed,
-        bloodGroup: bloodGroup ?? this.bloodGroup,
-        allergies: allergies ?? this.allergies,
-        medications: medications ?? this.medications,
         batteryLevel: batteryLevel ?? this.batteryLevel,
         audioBase64: audioBase64 ?? this.audioBase64,
         audioDurationSeconds: audioDurationSeconds ?? this.audioDurationSeconds,
@@ -228,6 +236,7 @@ class EmergencyMessage {
         relayPath: relayPath ?? this.relayPath,
         expiresAt: expiresAt ?? this.expiresAt,
         originVerifiedLocally: originVerifiedLocally ?? this.originVerifiedLocally,
+        cancelsEventId: cancelsEventId ?? this.cancelsEventId,
       );
 
   /// True once `hopCount` has reached this message's hop budget — a

@@ -15,6 +15,8 @@ export interface ConversationSummary {
   id: string;
   type: 'direct' | 'group';
   otherParticipant: { id: string; displayName: string | null } | null;
+  /** Present for group conversations only. */
+  group?: { id: string; name: string; kind: string };
   lastMessage: {
     id: string;
     messageType: 'text' | 'location';

@@ -20,6 +20,14 @@ class ApiException implements Exception {
   factory ApiException.network(String message) =>
       ApiException(statusCode: 0, code: 'NETWORK_ERROR', message: message);
 
+  /// The connection could not even be opened (no route, DNS failure,
+  /// connection refused) — unlike a timeout or reset, the request is known
+  /// never to have reached the server.
+  factory ApiException.noConnection(String message) =>
+      ApiException(statusCode: 0, code: 'NO_CONNECTION', message: message);
+
+  bool get neverReachedServer => code == 'NO_CONNECTION';
+
   bool get isNetworkError => statusCode == 0;
   bool get isUnauthorized => statusCode == 401;
 

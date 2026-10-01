@@ -12,8 +12,9 @@ import { googleSignInSchema, refreshSchema, sendOtpSchema, verifyOtpSchema } fro
 import { verifyGoogleIdToken } from '../services/googleAuthService';
 import { findOrCreateUserByGoogleSubject, findOrCreateUserByPhone, touchLastLogin } from '../services/userService';
 import { issueSession, revokeRefreshToken, rotateRefreshToken } from '../services/sessionService';
-import { requestOtp, verifyOtp } from '../services/verificationService';
+import { recordOtpDeliveryProvider, requestOtp, verifyOtp } from '../services/verificationService';
 import { sendSms } from '../services/sms/smsService';
+import { logger } from '../utils/logger';
 import { recordAuditEvent } from '../services/auditLogService';
 import { HttpError } from '../utils/httpError';
 
@@ -53,7 +54,7 @@ authRouter.post(
   asyncHandler(async (req, res) => {
     const { phoneNumber } = req.body as { phoneNumber: string }; // already E.164-normalized by sendOtpSchema
 
-    const { code } = await requestOtp({
+    const { code, attemptId } = await requestOtp({
       channel: 'sms',
       target: phoneNumber,
       purpose: 'login',
@@ -71,8 +72,9 @@ authRouter.post(
     // the caller to wait out the cooldown before trying again — accepted
     // as the safer failure mode for an abuse-sensitive, cost-bearing
     // (per-SMS-billed) send path.
+    let delivery: Awaited<ReturnType<typeof sendSms>>;
     try {
-      await sendSms(phoneNumber, OTP_MESSAGE_TEMPLATE(code));
+      delivery = await sendSms(phoneNumber, OTP_MESSAGE_TEMPLATE(code));
     } catch (err) {
       await recordAuditEvent({
         action: 'auth.phone_send_otp',
@@ -82,6 +84,12 @@ authRouter.post(
       });
       throw err;
     }
+
+    // Delivery metadata is informational; failing to record it must not turn
+    // an already-delivered code into an error response.
+    await recordOtpDeliveryProvider(attemptId, delivery.providerType).catch(() =>
+      logger.warn({ providerType: delivery.providerType }, 'Could not record OTP delivery provider'),
+    );
 
     await recordAuditEvent({
       action: 'auth.phone_send_otp',

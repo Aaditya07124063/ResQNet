@@ -6,6 +6,10 @@ import { employeeSettingsRouter } from './settingsRoutes';
 import { moderationRouter } from './moderationRoutes';
 import { listPermissions } from '../../services/employeePermissionService';
 import { asyncHandler } from '../../utils/asyncHandler';
+import { smsProviderRouter } from './smsProviderRoutes';
+import { employeeAlertRouter } from './alertRoutes';
+import { incidentRouter } from './incidentRoutes';
+import { auditLogRouter } from './auditLogRoutes';
 
 export const employeeRouter = Router();
 
@@ -13,6 +17,10 @@ employeeRouter.use('/auth', employeeAuthRouter);
 employeeRouter.use('/employees', employeeManagementRouter);
 employeeRouter.use('/settings', employeeSettingsRouter);
 employeeRouter.use('/review-cases', moderationRouter);
+employeeRouter.use('/sms-providers', smsProviderRouter);
+employeeRouter.use('/alerts', employeeAlertRouter);
+employeeRouter.use('/incidents', incidentRouter);
+employeeRouter.use('/audit-logs', auditLogRouter);
 
 // Identity-check endpoint, mirroring GET /api/v1/me for consumer users —
 // returns the authenticated employee plus their own granted permissions

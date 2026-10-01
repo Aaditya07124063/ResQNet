@@ -168,7 +168,8 @@ async function fanOutToNearbyUsers(
 /**
  * Sends push notifications for a new SOS to two DISTINCT recipient groups,
  * each with its own privacy level: trusted contacts who are ResQNet users
- * get the fuller alert (reporter name + message); nearby eligible users
+ * get the reporter's name, category and location (never the message text,
+ * which may contain medical details); nearby eligible users
  * get category + approximate distance only, never the reporter's identity,
  * message, or exact coordinates.
  */
@@ -181,13 +182,18 @@ async function notifyForNewSosEvent(
 
   const reporter = await getUserById(reporterUserId);
   const reporterName = reporter?.displayName ?? 'A ResQNet user';
+  // `type` lets the app choose the notification channel and deep link;
+  // `eventId` (the client-generated id) lets it recognise the same
+  // emergency already received over the offline mesh and not alert twice.
   const trustedContactData = {
+    type: 'sos_trusted_contact',
     sosEventId: event.id,
+    eventId: event.eventId,
     category: event.category,
     latitude: event.latitude !== null ? String(event.latitude) : '',
     longitude: event.longitude !== null ? String(event.longitude) : '',
   };
-  const nearbyData = { sosEventId: event.id, category: event.category };
+  const nearbyData = { type: 'sos_nearby', sosEventId: event.id, eventId: event.eventId, category: event.category };
 
   const trustedRecipients = pushRecipients.filter((r) => r.category === 'trusted_contact');
   const nearbyRecipients = pushRecipients.filter((r) => r.category === 'nearby');
@@ -199,8 +205,15 @@ async function notifyForNewSosEvent(
       trustedRecipients.map((r) => r.contactUserId),
       {
         title: `🚨 ${reporterName} needs you — SOS (${event.category})`,
-        body: event.message || 'Open ResQNet for their location.',
+        // Generic on purpose: the SOS message can hold medical details the
+        // person opted to share (automatic SOS), and push content passes
+        // through the push provider and may appear on a lock screen. The
+        // details are in the app, behind the signed-in session.
+        body: `${reporterName} needs emergency assistance — open ResQNet.`,
         data: trustedContactData,
+        androidChannelId: 'resqnet_sos',
+        highPriority: true,
+        tag: `sos:${event.eventId}`,
       },
     );
     for (const [userId, outcome] of trustedOutcomes) outcomes.set(userId, outcome);
@@ -212,6 +225,9 @@ async function notifyForNewSosEvent(
         title: '🚨 Emergency nearby',
         body: `${event.category} — ${approximateDistanceLabel(recipient.distanceM ?? 0)}`,
         data: nearbyData,
+        androidChannelId: 'resqnet_sos',
+        highPriority: true,
+        tag: `sos:${event.eventId}`,
       });
       for (const [userId, outcome] of recipientOutcomes) outcomes.set(userId, outcome);
     }
@@ -240,5 +256,48 @@ async function notifyForNewSosEvent(
        WHERE id = $3`,
       [outcome, outcome, recipient.sosRecipientId],
     );
+  }
+}
+
+/**
+ * Tells the ResQNet users who were alerted about an SOS that it has been
+ * resolved (or was a false alarm), so their "someone needs help" alert is
+ * not left standing. Uses the same privacy split as the original alert:
+ * trusted contacts see the reporter's name, nearby recipients do not.
+ * Best-effort — a failure here never fails the status update itself.
+ */
+export async function notifySosResolved(event: SosEvent, reporterUserId: string): Promise<void> {
+  const { rows } = await pool.query<{ recipient_user_id: string; recipient_category: string | null }>(
+    `SELECT DISTINCT recipient_user_id, recipient_category FROM sos_recipients
+     WHERE sos_event_id = $1 AND recipient_user_id IS NOT NULL AND channel = 'push' AND status = 'sent'`,
+    [event.id],
+  );
+  if (rows.length === 0) return;
+
+  const reporter = await getUserById(reporterUserId);
+  const reporterName = reporter?.displayName ?? 'A ResQNet user';
+  const outcome = event.status === 'false_alarm' ? 'was a false alarm' : 'has been resolved';
+  const data = { type: 'sos_resolved', sosEventId: event.id, eventId: event.eventId, status: event.status };
+
+  const trusted = rows.filter((r) => r.recipient_category !== 'nearby').map((r) => r.recipient_user_id);
+  const nearby = rows.filter((r) => r.recipient_category === 'nearby').map((r) => r.recipient_user_id);
+  if (trusted.length > 0) {
+    await notifyUsersDevices(trusted, {
+      title: `✅ ${reporterName}'s SOS ${outcome}`,
+      body: 'No further action is needed for this alert.',
+      data,
+      androidChannelId: 'resqnet_updates',
+      // Replaces the original "needs help" alert on the recipient's device.
+      tag: `sos:${event.eventId}`,
+    });
+  }
+  if (nearby.length > 0) {
+    await notifyUsersDevices(nearby, {
+      title: `✅ Nearby emergency ${outcome}`,
+      body: 'No further action is needed for this alert.',
+      data,
+      androidChannelId: 'resqnet_updates',
+      tag: `sos:${event.eventId}`,
+    });
   }
 }

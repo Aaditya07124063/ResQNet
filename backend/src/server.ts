@@ -3,6 +3,7 @@ import { env } from './config/env';
 import { logger } from './utils/logger';
 import { attachWebSocketServer } from './websocket/wsServer';
 import { pool } from './database/pool';
+import { startRetentionSchedule } from './services/retention/retentionScheduler';
 
 const app = createApp();
 const httpServer = app.listen(env.PORT, env.HOST, () => {
@@ -10,9 +11,11 @@ const httpServer = app.listen(env.PORT, env.HOST, () => {
 });
 
 attachWebSocketServer(httpServer);
+const stopRetentionSchedule = startRetentionSchedule();
 
 async function shutdown(signal: string): Promise<void> {
   logger.info({ signal }, 'Shutting down');
+  stopRetentionSchedule?.();
   httpServer.close(() => {
     logger.info('HTTP server closed');
   });

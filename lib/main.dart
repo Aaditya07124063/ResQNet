@@ -1,4 +1,3 @@
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map_tile_caching/flutter_map_tile_caching.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +6,8 @@ import 'core/services/ai_service.dart';
 import 'core/services/app_shortcut_service.dart';
 import 'core/services/background_detection_service.dart';
 import 'core/services/communication_service.dart';
+import 'core/services/connectivity_status_service.dart';
+import 'core/services/group_service.dart';
 import 'core/services/crash_detection_service.dart';
 import 'core/services/detection_logging_service.dart';
 import 'core/services/driving_context_service.dart';
@@ -29,11 +30,12 @@ import 'core/services/theme_service.dart';
 import 'core/services/trusted_contacts_service.dart';
 import 'core/services/voice_note_service.dart';
 import 'features/auth/auth_service.dart';
-import 'firebase_options.dart';
+import 'core/employee/employee_session.dart';
+import 'core/employee/operations_api.dart';
+import 'core/services/emergency_outbox_store.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   // Initialize offline map tile caching (FMTC v9 — ObjectBox backend)
   await FMTCObjectBoxBackend().initialise();
@@ -77,15 +79,20 @@ void main() async {
     drivingContext: drivingContextService,
   );
 
+  // Local data retention (docs/PRIVACY_AND_RETENTION.md): sent/closed SOS
+  // records older than 7 days (never pending ones), and sensor recordings
+  // older than 30 days. In the background — never delays start-up. Best
+  // effort: a failed prune changes nothing and is retried at next start.
+  EmergencyOutboxStore.instance.pruneTerminal().catchError((Object _) {});
+  sensorRecorderService.pruneExpiredRecordings().catchError((Object _) => 0);
+
   // USGS/EMSC are real public feeds — a cross-check signal only, never a
   // gate on local detection (see EarthquakeFeedService's docs).
   earthquakeFeedService.start();
 
-  // Future government/authority disaster-alert integration point: set
-  // GovernmentAlertFeedService.feedUrl and this starts polling it, turning
-  // each alert into a Hazard (danger) or a SafeZone/SafeRoute ("this way is
-  // safe") that also relays over the offline mesh.
-  // No-ops until a feed URL is configured — see the file for details.
+  // Emergency alerts from the ResQNet server (official, partner, and
+  // ResQNet notices, each labelled by source) onto the map, also relayed
+  // over the offline mesh — see GovernmentAlertFeedService.
   GovernmentAlertFeedService(hazardService, safeZoneService, meshService)
       .start();
 
@@ -93,6 +100,10 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthService()),
+        // Restored lazily when the responder portal is opened, so civilian
+        // app start never makes an employee-session request.
+        ChangeNotifierProvider(create: (_) => EmployeeSession()),
+        Provider(create: (_) => OperationsApi()),
         ChangeNotifierProvider(create: (_) => aiService),
         ChangeNotifierProvider(create: (_) => locationService),
         ChangeNotifierProvider(
@@ -115,6 +126,8 @@ void main() async {
         ChangeNotifierProvider(create: (_) => CommunicationService()),
         ChangeNotifierProvider(create: (_) => NearbyAlertService()),
         ChangeNotifierProvider(create: (_) => EmergencyCommunicationService()),
+        ChangeNotifierProvider(create: (_) => ConnectivityStatusService()),
+        ChangeNotifierProvider(create: (_) => GroupService()),
         Provider<AppShortcutService>.value(value: appShortcutService),
       ],
       child: const ResQNetApp(),

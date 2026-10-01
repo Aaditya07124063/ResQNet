@@ -20,6 +20,14 @@ abstract class MapTileProvider {
   bool get isProductionReady;
 }
 
+/// Whether bulk pre-fetching (region download, automatic background
+/// caching) is allowed for [provider]. The OpenStreetMap Foundation tile
+/// policy states "Offline use is not permitted on tile.openstreetmap.org"
+/// and that prefetching is blocked without notice — so bulk downloads are
+/// only enabled with a configured, licensed provider. Tiles the user is
+/// actually viewing are still cached normally.
+bool allowsBulkDownload(MapTileProvider provider) => provider.isProductionReady;
+
 /// The tile source this app has always used, made explicit and
 /// centralized rather than fixed. DISCLOSED, NOT SILENTLY CARRIED
 /// FORWARD: OpenStreetMap's own tile usage policy

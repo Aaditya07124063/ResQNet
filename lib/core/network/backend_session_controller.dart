@@ -1,13 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'backend_session.dart';
 
-/// Observable backend-session state (Phase 4B). Deliberately Firebase-free
-/// — like `BackendSession` itself (Phase 4A) — so it can be unit tested
-/// without Firebase initialization, which this project's test suite has
-/// never set up. `AuthService` owns an instance of this and exposes it to
-/// the UI; nothing here decides what Firebase does or which screen is
-/// shown — Firebase's `authStateChanges()` remains the sole thing
-/// `_AuthGate` (lib/app.dart) actually gates navigation on.
+/// Observable ResQNet backend-session state. `AuthService` owns an
+/// instance and exposes it to the UI; `_AuthGate` (lib/app.dart) decides
+/// between sign-in and Home solely from [status].
 enum BackendSessionStatus {
   /// Restoration hasn't run yet this app launch.
   unknown,
@@ -52,8 +48,8 @@ class BackendSessionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Called when the app signs out (of Firebase, and — once Phase 4C
-  /// wires it up — of the backend too) so the observable state reflects
+  /// Called when the app signs out (or the backend ends the session) so
+  /// the observable state reflects
   /// "no session" immediately, without needing another restore() round
   /// trip. Does not itself touch token storage — the caller
   /// (AuthService.signOut()) is responsible for actually clearing tokens

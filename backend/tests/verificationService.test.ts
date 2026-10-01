@@ -6,13 +6,15 @@ jest.mock('../src/database/pool', () => ({
 }));
 
 import { pool, withTransaction } from '../src/database/pool';
-import { requestOtp, verifyOtp } from '../src/services/verificationService';
+import { hashCode, recordOtpDeliveryProvider, requestOtp, verifyOtp } from '../src/services/verificationService';
 
 const mockPoolQuery = pool.query as jest.Mock;
 const mockWithTransaction = withTransaction as jest.Mock;
 
-function hashOf(code: string): string {
-  return createHash('sha256').update(code).digest('hex');
+const TARGET = '+9779812345678';
+
+function hashOf(code: string, target = TARGET): string {
+  return hashCode(code, 'sms', target, 'login');
 }
 
 /** Mirrors moderationService.test.ts's own helper: mocks withTransaction
@@ -44,34 +46,51 @@ beforeEach(() => {
 });
 
 describe('requestOtp', () => {
-  it('generates a cryptographically-random 6-digit numeric code', async () => {
-    mockPoolQuery.mockResolvedValueOnce({ rows: [] }); // cooldown check: no prior row
-    mockPoolQuery.mockResolvedValueOnce({ rows: [] }); // insert
+  // Transaction query order: advisory lock, cooldown lookup, insert.
+  function mockRequest(lastCreatedAt?: Date) {
+    return mockTransactionQueries(
+      { rows: [] },
+      { rows: lastCreatedAt ? [{ created_at: lastCreatedAt }] : [] },
+      { rows: [{ id: 'attempt-new' }] },
+    );
+  }
 
-    const { code } = await requestOtp({ channel: 'sms', target: '+9779812345678', purpose: 'login', ipAddress: null });
+  it('generates a cryptographically-random 6-digit numeric code', async () => {
+    mockRequest();
+    const { code, attemptId } = await requestOtp({ channel: 'sms', target: TARGET, purpose: 'login', ipAddress: null });
     expect(code).toMatch(/^\d{6}$/);
+    expect(attemptId).toBe('attempt-new');
   });
 
-  it('stores only the SHA-256 hash of the code — never the raw code', async () => {
-    mockPoolQuery.mockResolvedValueOnce({ rows: [] });
-    mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+  it('serializes concurrent requests for the same target with an advisory lock', async () => {
+    const clientQuery = mockRequest();
+    await requestOtp({ channel: 'sms', target: TARGET, purpose: 'login', ipAddress: null });
+    expect(clientQuery.mock.calls[0][0]).toMatch(/pg_advisory_xact_lock/);
+    expect(clientQuery.mock.calls[0][1]).toEqual([`otp:sms:${TARGET}:login`]);
+  });
 
-    const { code } = await requestOtp({ channel: 'sms', target: '+9779812345678', purpose: 'login', ipAddress: null });
+  it('stores only a keyed hash of the code — never the raw code or a bare SHA-256', async () => {
+    const clientQuery = mockRequest();
+    const { code } = await requestOtp({ channel: 'sms', target: TARGET, purpose: 'login', ipAddress: null });
 
-    const [insertSql, insertParams] = mockPoolQuery.mock.calls[1];
+    const [insertSql, insertParams] = clientQuery.mock.calls[2];
     expect(insertSql).toMatch(/INSERT INTO verification_attempts/);
     expect(insertParams).not.toContain(code);
+    expect(insertParams).not.toContain(createHash('sha256').update(code).digest('hex'));
     expect(insertParams).toContain(hashOf(code));
+    expect(hashOf(code)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('binds the stored hash to the target, so a digest cannot be reused for another number', () => {
+    expect(hashOf('123456')).not.toBe(hashOf('123456', '+9779800000000'));
   });
 
   it('sets a 5-minute expiry and max_attempts=5 on the new row', async () => {
-    mockPoolQuery.mockResolvedValueOnce({ rows: [] });
-    mockPoolQuery.mockResolvedValueOnce({ rows: [] });
-
+    const clientQuery = mockRequest();
     const before = Date.now();
-    await requestOtp({ channel: 'sms', target: '+9779812345678', purpose: 'login', ipAddress: null });
+    await requestOtp({ channel: 'sms', target: TARGET, purpose: 'login', ipAddress: null });
 
-    const [, insertParams] = mockPoolQuery.mock.calls[1];
+    const [, insertParams] = clientQuery.mock.calls[2];
     const [, , , , maxAttempts, expiresAt] = insertParams;
     expect(maxAttempts).toBe(5);
     const ttlMs = (expiresAt as Date).getTime() - before;
@@ -80,19 +99,25 @@ describe('requestOtp', () => {
   });
 
   it('rejects a new request within the 60-second resend cooldown', async () => {
-    mockPoolQuery.mockResolvedValueOnce({ rows: [{ created_at: new Date(Date.now() - 10_000) }] });
-
+    const clientQuery = mockRequest(new Date(Date.now() - 10_000));
     await expect(
-      requestOtp({ channel: 'sms', target: '+9779812345678', purpose: 'login', ipAddress: null }),
+      requestOtp({ channel: 'sms', target: TARGET, purpose: 'login', ipAddress: null }),
     ).rejects.toThrow(/wait/i);
+    expect(clientQuery).toHaveBeenCalledTimes(2); // no insert
   });
 
   it('allows a new request once the resend cooldown has elapsed', async () => {
-    mockPoolQuery.mockResolvedValueOnce({ rows: [{ created_at: new Date(Date.now() - 61_000) }] });
-    mockPoolQuery.mockResolvedValueOnce({ rows: [] });
-
-    const { code } = await requestOtp({ channel: 'sms', target: '+9779812345678', purpose: 'login', ipAddress: null });
+    mockRequest(new Date(Date.now() - 61_000));
+    const { code } = await requestOtp({ channel: 'sms', target: TARGET, purpose: 'login', ipAddress: null });
     expect(code).toMatch(/^\d{6}$/);
+  });
+});
+
+describe('recordOtpDeliveryProvider', () => {
+  it('stores only the provider type on the attempt row', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+    await recordOtpDeliveryProvider('attempt-1', 'sparrow_sms');
+    expect(mockPoolQuery).toHaveBeenCalledWith(expect.stringMatching(/SET provider_type = \$1/), ['sparrow_sms', 'attempt-1']);
   });
 });
 

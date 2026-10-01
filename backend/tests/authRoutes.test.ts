@@ -17,6 +17,7 @@ jest.mock('../src/services/sessionService', () => ({
 }));
 jest.mock('../src/services/verificationService', () => ({
   requestOtp: jest.fn(),
+  recordOtpDeliveryProvider: jest.fn().mockResolvedValue(undefined),
   verifyOtp: jest.fn(),
 }));
 jest.mock('../src/services/sms/smsService', () => ({
@@ -182,8 +183,8 @@ describe('POST /api/v1/auth/phone/send-otp', () => {
   // specifically exercise the phone-keyed limiter deliberately reuse one
   // number.
   it('normalizes the phone number to E.164 before requesting an OTP', async () => {
-    (requestOtp as jest.Mock).mockResolvedValue({ code: '123456' });
-    (sendSms as jest.Mock).mockResolvedValue(undefined);
+    (requestOtp as jest.Mock).mockResolvedValue({ code: '123456', attemptId: 'attempt-1' });
+    (sendSms as jest.Mock).mockResolvedValue({ providerId: 'p1', providerType: 'sparrow_sms' });
 
     await request(app)
       .post('/api/v1/auth/phone/send-otp')
@@ -197,8 +198,8 @@ describe('POST /api/v1/auth/phone/send-otp', () => {
   });
 
   it('returns a generic success response that never reveals account existence', async () => {
-    (requestOtp as jest.Mock).mockResolvedValue({ code: '123456' });
-    (sendSms as jest.Mock).mockResolvedValue(undefined);
+    (requestOtp as jest.Mock).mockResolvedValue({ code: '123456', attemptId: 'attempt-1' });
+    (sendSms as jest.Mock).mockResolvedValue({ providerId: 'p1', providerType: 'sparrow_sms' });
 
     const res = await request(app)
       .post('/api/v1/auth/phone/send-otp')
@@ -211,7 +212,7 @@ describe('POST /api/v1/auth/phone/send-otp', () => {
 
   it('never returns the OTP code in the response body', async () => {
     (requestOtp as jest.Mock).mockResolvedValue({ code: '654321' });
-    (sendSms as jest.Mock).mockResolvedValue(undefined);
+    (sendSms as jest.Mock).mockResolvedValue({ providerId: 'p1', providerType: 'sparrow_sms' });
 
     const res = await request(app)
       .post('/api/v1/auth/phone/send-otp')
@@ -222,7 +223,7 @@ describe('POST /api/v1/auth/phone/send-otp', () => {
   });
 
   it('propagates an SMS-send failure as a 500 without leaking provider details', async () => {
-    (requestOtp as jest.Mock).mockResolvedValue({ code: '123456' });
+    (requestOtp as jest.Mock).mockResolvedValue({ code: '123456', attemptId: 'attempt-1' });
     (sendSms as jest.Mock).mockRejectedValue(HttpError.internal('SMS delivery is not currently available'));
 
     const res = await request(app)
@@ -246,8 +247,8 @@ describe('POST /api/v1/auth/phone/send-otp', () => {
   });
 
   it('rate-limits repeated requests from the same IP (OTP_SEND_RATE_LIMIT_MAX defaults to 3)', async () => {
-    (requestOtp as jest.Mock).mockResolvedValue({ code: '123456' });
-    (sendSms as jest.Mock).mockResolvedValue(undefined);
+    (requestOtp as jest.Mock).mockResolvedValue({ code: '123456', attemptId: 'attempt-1' });
+    (sendSms as jest.Mock).mockResolvedValue({ providerId: 'p1', providerType: 'sparrow_sms' });
 
     // A single fixed phone number reused across this loop's 4 requests
     // would ALSO trip the phone-keyed limiter, making it ambiguous which
@@ -265,8 +266,8 @@ describe('POST /api/v1/auth/phone/send-otp', () => {
   });
 
   it('rate-limits repeated requests for the same phone number even across different IPs', async () => {
-    (requestOtp as jest.Mock).mockResolvedValue({ code: '123456' });
-    (sendSms as jest.Mock).mockResolvedValue(undefined);
+    (requestOtp as jest.Mock).mockResolvedValue({ code: '123456', attemptId: 'attempt-1' });
+    (sendSms as jest.Mock).mockResolvedValue({ providerId: 'p1', providerType: 'sparrow_sms' });
 
     let lastStatus = 0;
     for (let i = 0; i < 4; i++) {
@@ -280,8 +281,8 @@ describe('POST /api/v1/auth/phone/send-otp', () => {
   });
 
   it('rate limiting is immune to formatting-variant bypass (same number, different formatting)', async () => {
-    (requestOtp as jest.Mock).mockResolvedValue({ code: '123456' });
-    (sendSms as jest.Mock).mockResolvedValue(undefined);
+    (requestOtp as jest.Mock).mockResolvedValue({ code: '123456', attemptId: 'attempt-1' });
+    (sendSms as jest.Mock).mockResolvedValue({ providerId: 'p1', providerType: 'sparrow_sms' });
 
     const variants = ['9811111111', '+977 981 111 1111', '+977-981-111-1111', '9811111111'];
     let lastStatus = 0;

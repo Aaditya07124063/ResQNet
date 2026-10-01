@@ -34,6 +34,9 @@ class MapCacheService {
   /// haven't auto-cached recently. Never throws — a failure here must
   /// never block app startup or crash the app.
   static Future<void> autoCacheNearbyArea(Position position) async {
+    // Bulk prefetch is only permitted with a licensed tile provider (see
+    // allowsBulkDownload); with the default OSM server this is a no-op.
+    if (!allowsBulkDownload(resolveMapTileProvider())) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       final lastMillis = prefs.getInt(_lastAutoCacheKey);

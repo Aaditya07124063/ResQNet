@@ -100,10 +100,10 @@ class _NearbyEmergencyScreenState extends State<NearbyEmergencyScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
+                            const Row(
                               children: [
                                 Icon(Icons.warning_amber_rounded, color: AppColors.emergencyRed, size: 28),
-                                const SizedBox(width: 10),
+                                SizedBox(width: 10),
                                 Expanded(
                                   child: Text('🚨 Emergency nearby',
                                       style: TextStyle(

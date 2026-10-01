@@ -77,4 +77,20 @@ void main() {
       expect(provider.attributionUrl, isNotEmpty);
     });
   });
+
+  group('bulk/offline downloads (OSM tile usage policy)', () {
+    test('are not allowed against the public OpenStreetMap tile server', () {
+      expect(allowsBulkDownload(const OpenStreetMapDirectProvider()), isFalse);
+    });
+
+    test('are allowed with a configured, licensed provider', () {
+      final provider = resolveMapTileProviderFrom(
+        urlTemplate: 'https://tiles.example.org/{z}/{x}/{y}.png',
+        apiKey: '',
+        attribution: 'Example / OpenStreetMap contributors',
+        attributionUrl: 'https://tiles.example.org/copyright',
+      );
+      expect(allowsBulkDownload(provider), isTrue);
+    });
+  });
 }

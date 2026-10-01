@@ -70,6 +70,32 @@ describe('sendMulticast — configured', () => {
     expect(mockInitializeApp).toHaveBeenCalledTimes(1);
   });
 
+  it('sends emergency pushes on the requested Android channel with high priority', async () => {
+    mockInitializeApp.mockReturnValue({ name: 'fake-app' });
+    const sendEachForMulticast = jest.fn().mockResolvedValue({ responses: [{ success: true }] });
+    mockGetMessaging.mockReturnValue({ sendEachForMulticast });
+    const { sendMulticast } = await freshImport();
+    await sendMulticast(['t1'], {
+      title: 't',
+      body: 'b',
+      androidChannelId: 'resqnet_sos',
+      highPriority: true,
+      tag: 'sos:abc',
+    });
+    const message = sendEachForMulticast.mock.calls[0][0];
+    expect(message.android).toEqual({ priority: 'high', notification: { channelId: 'resqnet_sos', tag: 'sos:abc' } });
+    expect(message.apns.headers).toEqual({ 'apns-priority': '10', 'apns-collapse-id': 'sos:abc' });
+  });
+
+  it('uses normal priority when a push is not an emergency', async () => {
+    mockInitializeApp.mockReturnValue({ name: 'fake-app' });
+    const sendEachForMulticast = jest.fn().mockResolvedValue({ responses: [{ success: true }] });
+    mockGetMessaging.mockReturnValue({ sendEachForMulticast });
+    const { sendMulticast } = await freshImport();
+    await sendMulticast(['t1'], { title: 't', body: 'b' });
+    expect(sendEachForMulticast.mock.calls[0][0].android).toEqual({ priority: 'normal' });
+  });
+
   it('maps a successful per-token response through', async () => {
     mockInitializeApp.mockReturnValue({ name: 'fake-app' });
     mockGetMessaging.mockReturnValue({

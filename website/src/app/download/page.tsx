@@ -13,11 +13,10 @@ export const metadata = pageMetadata({
 });
 
 // No Play Store or App Store listing exists yet — verified via the
-// repository audit (Android applicationId is still the Flutter default
-// "com.example.resqnet", never changed to a released package id, and no
-// store URL is recorded anywhere in the project). This page intentionally
-// shows a real "coming soon" state instead of a non-functional download
-// button.
+// repository audit (the Android applicationId is now "com.resqnet.app",
+// but no Play Console submission or store URL exists anywhere in the
+// project). This page intentionally shows a real "coming soon" state
+// instead of a non-functional download button.
 const platforms = [
   {
     icon: Smartphone,

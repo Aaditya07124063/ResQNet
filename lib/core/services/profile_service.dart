@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../network/api_client.dart';
 import '../network/api_exception.dart';
+import '../utils/medical_summary.dart';
 
 /// Holds the user's profile — cached locally (SharedPreferences) so it's
 /// available instantly and offline, and synced with the ResQNet backend
@@ -29,7 +30,9 @@ import '../network/api_exception.dart';
 ///   [refreshPhotoUrl] to get a fresh one rather than trusting a cached
 ///   value to still work.
 class ProfileService extends ChangeNotifier {
-  static const _storageKey = 'profile_cache';
+  /// Local copy of the profile, including the medical details the user
+  /// chose to save. Removed on sign-out (AuthService).
+  static const storageKey = 'profile_cache';
 
   String _name = '';
   String _fatherName = '';
@@ -48,6 +51,39 @@ class ProfileService extends ChangeNotifier {
   String get fatherName => _fatherName;
   String get age => _age;
   String get address => _address;
+  // --- Medical information in automatic SOS (explicit opt-in) ---
+
+  /// Device-local preference, separate from the synced profile. OFF unless
+  /// the user turns it on; never inferred from having medical details.
+  static const includeMedicalInAutoSosKey = 'resqnet_medical_in_auto_sos_v1';
+  bool _includeMedicalInAutoSos = false;
+  bool get includeMedicalInAutoSos => _includeMedicalInAutoSos;
+
+  /// Reads the preference. Anything other than a stored `true` (missing,
+  /// wrong type, storage error) means OFF.
+  Future<void> loadMedicalSharingPreference() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _includeMedicalInAutoSos = prefs.get(includeMedicalInAutoSosKey) == true;
+    } catch (_) {
+      _includeMedicalInAutoSos = false;
+    }
+    notifyListeners();
+  }
+
+  Future<void> setIncludeMedicalInAutoSos(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(includeMedicalInAutoSosKey, value);
+    _includeMedicalInAutoSos = value;
+    notifyListeners();
+  }
+
+  /// What an automatic (crash/earthquake) SOS may add to its signed message:
+  /// blood group and allergies, only when the user opted in; otherwise ''.
+  /// Medications are never included.
+  String get automaticSosMedicalSummary =>
+      _includeMedicalInAutoSos ? medicalSummary(_bloodGroup, _allergies) : '';
+
   String get bloodGroup => _bloodGroup;
   String get allergies => _allergies;
   String get medications => _medications;
@@ -105,8 +141,9 @@ class ProfileService extends ChangeNotifier {
 
   /// Loads from the local cache only — instant, works with zero internet.
   Future<void> loadFromCache() async {
+    await loadMedicalSharingPreference();
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_storageKey);
+    final raw = prefs.getString(storageKey);
     if (raw != null) {
       _applyData(jsonDecode(raw) as Map<String, dynamic>);
       notifyListeners();
@@ -193,6 +230,28 @@ class ProfileService extends ChangeNotifier {
 
   Future<void> _persistLocal() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_storageKey, jsonEncode(toJson()));
+    await prefs.setString(storageKey, jsonEncode(toJson()));
+  }
+
+  /// Forgets the signed-in user's profile on this device (memory and disk).
+  Future<void> clearLocal() async {
+    _name = '';
+    _fatherName = '';
+    _age = '';
+    _address = '';
+    _bloodGroup = '';
+    _allergies = '';
+    _medications = '';
+    _emergencyContact = '';
+    _photoUrl = '';
+    _country = '';
+    _state = '';
+    _city = '';
+    // The medical-sharing opt-in belongs to the signed-out person too.
+    _includeMedicalInAutoSos = false;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(storageKey);
+    await prefs.remove(includeMedicalInAutoSosKey);
+    notifyListeners();
   }
 }

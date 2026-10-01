@@ -192,3 +192,32 @@ LocalOriginVerificationResult verifyOriginEnvelopeLocally({
       ? LocalOriginVerificationResult.signatureValidSelfConsistent
       : LocalOriginVerificationResult.signatureInvalid;
 }
+
+/// Verifies a DER-encoded ECDSA P-256/SHA-256 [signatureBase64] over
+/// [message] with an SPKI [publicKeyPem]. Never throws; false for anything
+/// malformed. Used for server-signed emergency alerts
+/// (lib/core/security/alert_signature.dart).
+bool verifyP256DerSignature({
+  required String publicKeyPem,
+  required List<int> message,
+  required String signatureBase64,
+}) {
+  final spkiDer = _spkiDerFromPem(publicKeyPem);
+  if (spkiDer == null) return false;
+  final ECSignature? signature;
+  try {
+    signature = _parseDerSignature(base64Decode(signatureBase64));
+  } catch (_) {
+    return false;
+  }
+  if (signature == null) return false;
+  try {
+    final point = _p256Params.curve.decodePoint(spkiDer.sublist(_p256SpkiHeader.length));
+    if (point == null) return false;
+    final verifier = ECDSASigner(SHA256Digest())
+      ..init(false, PublicKeyParameter<ECPublicKey>(ECPublicKey(point, _p256Params)));
+    return verifier.verifySignature(Uint8List.fromList(message), signature);
+  } catch (_) {
+    return false;
+  }
+}

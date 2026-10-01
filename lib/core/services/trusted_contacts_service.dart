@@ -70,14 +70,23 @@ class TrustedContact {
 /// cross-device sync of an offline-made change isn't automatic the way
 /// it was under Firestore.
 class TrustedContactsService extends ChangeNotifier {
-  static const _storageKey = 'trusted_contacts';
+  /// Local copy of the trusted contacts. Removed on sign-out (AuthService).
+  static const storageKey = 'trusted_contacts';
   List<TrustedContact> _contacts = [];
+
+  /// Forgets the signed-in user's contacts on this device (memory and disk).
+  Future<void> clearLocal() async {
+    _contacts = [];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(storageKey);
+    notifyListeners();
+  }
 
   List<TrustedContact> get contacts => List.unmodifiable(_contacts);
 
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_storageKey);
+    final raw = prefs.getString(storageKey);
     if (raw != null) {
       _contacts =
           (jsonDecode(raw) as List).map((e) => TrustedContact.fromJson(e)).toList();
@@ -154,7 +163,7 @@ class TrustedContactsService extends ChangeNotifier {
   Future<void> _persistLocal() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
-      _storageKey,
+      storageKey,
       jsonEncode(_contacts.map((c) => c.toJson()).toList()),
     );
   }

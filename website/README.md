@@ -82,10 +82,10 @@ should not be coupled to an authenticated backend).
   the project; set this before launch.
 - **Play Store / App Store links** (`src/app/download/page.tsx`) — the
   Download page intentionally shows a "coming soon"-style status instead
-  of a link. The Android `applicationId` is still Flutter's own default
-  (`com.example.resqnet`), confirming no store listing exists yet. Once a
-  real listing exists, replace the status cards with real store buttons
-  (and QR codes, if desired).
+  of a link. The Android `applicationId` is now `com.resqnet.app`, but no
+  Play Console submission or store listing exists yet. Once a real
+  listing exists, replace the status cards with real store buttons (and
+  QR codes, if desired).
 - **Privacy Policy / Terms of Service** — both pages carry an explicit
   "not legally reviewed" notice (`LegalNotice` component) and describe
   only what the product actually does today. Have these reviewed by

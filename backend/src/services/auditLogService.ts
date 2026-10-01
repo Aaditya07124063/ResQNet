@@ -1,5 +1,6 @@
 import { pool } from '../database/pool';
 import { logger } from '../utils/logger';
+import { redactAuditMetadata } from '../utils/auditRedaction';
 
 interface AuditEvent {
   actorUserId?: string | null;
@@ -28,7 +29,7 @@ export async function recordAuditEvent(event: AuditEvent): Promise<void> {
         event.resourceType,
         event.resourceId ?? null,
         event.outcome,
-        event.metadata ? JSON.stringify(event.metadata) : null,
+        event.metadata ? JSON.stringify(redactAuditMetadata(event.metadata)) : null,
         event.ipAddress ?? null,
       ],
     );

@@ -39,10 +39,11 @@ export const howItWorksSteps: Step[] = [
 export const resilientCommunicationStatus = {
   implemented: [
     "Direct device-to-device message relay over Bluetooth and Wi-Fi Direct, for devices that are physically nearby and have ResQNet's mesh mode active.",
+    "Multi-hop store-and-forward: a phone that receives an SOS keeps it and passes it to the next ResQNet phone that comes into range, and the first phone with Internet uploads it. Implemented and tested in simulation; not yet field-tested across several phones.",
     "Local crash detection and earthquake detection that can trigger an SOS without the person needing to open the app first.",
   ],
   planned: [
-    "Wide-area mesh relay across multiple hops, beyond direct nearby-device range.",
+    "Published range and delivery results from multi-phone field tests.",
     "Coordination with official emergency-response or government systems.",
   ],
 };

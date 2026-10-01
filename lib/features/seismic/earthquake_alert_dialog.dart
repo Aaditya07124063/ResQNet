@@ -33,11 +33,9 @@ class _EarthquakeAlertDialogState extends State<EarthquakeAlertDialog> {
     super.initState();
     HapticFeedback.heavyImpact();
     // Continuous strong vibration to wake/alert the user.
-    _hapticTimer = Timer.periodic(
-        const Duration(milliseconds: 700), (_) => HapticFeedback.heavyImpact());
+    _hapticTimer = Timer.periodic(const Duration(milliseconds: 700), (_) => HapticFeedback.heavyImpact());
 
-    _totalSeconds =
-        context.read<SeismicService>().confirmationCountdown.inSeconds;
+    _totalSeconds = context.read<SeismicService>().confirmationCountdown.inSeconds;
     _remaining = _totalSeconds;
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (_remaining <= 1) {
@@ -50,6 +48,7 @@ class _EarthquakeAlertDialogState extends State<EarthquakeAlertDialog> {
   }
 
   void _dismiss() {
+    if (_sosSent) return;
     _hapticTimer?.cancel();
     _countdownTimer?.cancel();
     context.read<SeismicService>().cancel();
@@ -59,43 +58,50 @@ class _EarthquakeAlertDialogState extends State<EarthquakeAlertDialog> {
 
   Future<void> _sendSOS() async {
     if (_sosSent) return;
-    _sosSent = true;
+    // Once sending starts, "cancel" here would only close the dialog while
+    // the SOS still goes out — the button is disabled and the user ends
+    // the SOS from Home ("I'm safe") instead.
+    setState(() => _sosSent = true);
     _hapticTimer?.cancel();
     _countdownTimer?.cancel();
 
     final seismicService = context.read<SeismicService>();
     final profileService = context.read<ProfileService>();
     final auth = context.read<AuthService>();
+    // Captured before any await: the auto-SOS must be sent even if this
+    // dialog is disposed while it is being prepared.
+    final deps = SosDispatchDeps.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     seismicService.confirm();
 
     final evidence = seismicService.evidence;
     final name = profileService.name.isNotEmpty
         ? profileService.name
-        : (auth.currentUser?.displayName ??
-            auth.currentUser?.phoneNumber ??
-            'Unknown');
+        : (auth.currentUser?.displayName ?? auth.currentUser?.phoneNumber ?? 'Unknown');
 
-    await SosDispatchService.dispatch(
-      context,
-      userId: auth.currentUser?.uid ?? 'unknown',
+    await profileService.loadMedicalSharingPreference();
+    final result = await SosDispatchService.dispatchWith(
+      deps,
+      userId: await auth.currentSenderId(),
       userName: name,
       category: SosCategory.earthquake,
       message: '🌍 EARTHQUAKE DETECTED — AUTO SOS '
-          '(confidence ${(evidence.totalConfidence * 100).toStringAsFixed(0)}%)\n'
-          'Blood: ${profileService.bloodGroup} | Allergies: ${profileService.allergies}',
+          '(detector score ${(evidence.totalConfidence * 100).toStringAsFixed(0)}%)',
       eventSource: 'earthquake_detection',
+      // Blood group and allergies only if the user opted in (off by default).
+      medicalSummary: profileService.automaticSosMedicalSummary,
     );
     HapticFeedback.vibrate();
 
-    if (mounted) {
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🚨 Earthquake SOS sent'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+    if (mounted) navigator.pop();
+    messenger.showSnackBar(
+      SnackBar(
+        content:
+            Text(result.alreadyActive ? 'Your SOS was already active — it continues.' : '🚨 Earthquake SOS activated'),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
 
   @override
@@ -136,20 +142,17 @@ class _EarthquakeAlertDialogState extends State<EarthquakeAlertDialog> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
+                    color: Colors.white.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: const Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('🔻 DROP to the ground',
-                          style: TextStyle(color: Colors.white, fontSize: 18)),
+                      Text('🔻 DROP to the ground', style: TextStyle(color: Colors.white, fontSize: 18)),
                       SizedBox(height: 8),
-                      Text('🛡️ COVER under sturdy furniture',
-                          style: TextStyle(color: Colors.white, fontSize: 18)),
+                      Text('🛡️ COVER under sturdy furniture', style: TextStyle(color: Colors.white, fontSize: 18)),
                       SizedBox(height: 8),
-                      Text('✊ HOLD ON until shaking stops',
-                          style: TextStyle(color: Colors.white, fontSize: 18)),
+                      Text('✊ HOLD ON until shaking stops', style: TextStyle(color: Colors.white, fontSize: 18)),
                     ],
                   ),
                 ),
@@ -160,9 +163,9 @@ class _EarthquakeAlertDialogState extends State<EarthquakeAlertDialog> {
                   style: TextStyle(color: Colors.white70, fontSize: 13),
                 ),
                 const SizedBox(height: 24),
-                Text(
+                const Text(
                   'Sending SOS in...',
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                  style: TextStyle(color: Colors.white70, fontSize: 13),
                 ),
                 const SizedBox(height: 8),
                 Stack(
@@ -180,16 +183,13 @@ class _EarthquakeAlertDialogState extends State<EarthquakeAlertDialog> {
                     ),
                     Text(
                       '$_remaining',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold),
+                      style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Confidence: ${(evidence.totalConfidence * 100).toStringAsFixed(0)}% '
+                  'Detector score: ${(evidence.totalConfidence * 100).toStringAsFixed(0)}% (not a verified probability) '
                   '(based on this device — nearby devices are checked in the background)',
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white60, fontSize: 12),
@@ -198,7 +198,7 @@ class _EarthquakeAlertDialogState extends State<EarthquakeAlertDialog> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _dismiss,
+                    onPressed: _sosSent ? null : _dismiss,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -206,9 +206,9 @@ class _EarthquakeAlertDialogState extends State<EarthquakeAlertDialog> {
                         borderRadius: BorderRadius.circular(30),
                       ),
                     ),
-                    child: const Text(
-                      "I'M SAFE — CANCEL SOS",
-                      style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                    child: Text(
+                      _sosSent ? 'SOS SENDING — END IT FROM HOME' : "I'M SAFE — CANCEL SOS",
+                      style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),

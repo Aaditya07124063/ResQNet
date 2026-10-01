@@ -10,6 +10,9 @@
 analyzer:
   exclude:
     - build/**
+    # Separate, untracked copy of the project kept for history cleanup; it
+    # is not imported by the app and must not be analyzed as part of it.
+    - ResQNet-GITHUB-CLEANUP/**
     - android/**
     - ios/**
     - web/**

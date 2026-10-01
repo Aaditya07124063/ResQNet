@@ -86,6 +86,9 @@ interface DbConversationSummaryRow {
   type: 'direct' | 'group';
   other_user_id: string | null;
   other_display_name: string | null;
+  group_id: string | null;
+  group_name: string | null;
+  group_kind: string | null;
   last_message_id: string | null;
   last_message_type: 'text' | 'location' | null;
   last_message_body: string | null;
@@ -109,6 +112,9 @@ export async function listConversationsForUser(userId: string): Promise<Conversa
        c.type,
        other.user_id AS other_user_id,
        u.display_name AS other_display_name,
+       g.id AS group_id,
+       g.name AS group_name,
+       g.kind AS group_kind,
        lm.id AS last_message_id,
        lm.message_type AS last_message_type,
        lm.body AS last_message_body,
@@ -126,6 +132,7 @@ export async function listConversationsForUser(userId: string): Promise<Conversa
      LEFT JOIN conversation_participants other
        ON other.conversation_id = c.id AND other.user_id != $1 AND c.type = 'direct'
      LEFT JOIN users u ON u.id = other.user_id
+     LEFT JOIN groups g ON g.id = c.group_id
      LEFT JOIN LATERAL (
        SELECT id, message_type, body, sender_user_id, server_received_at
        FROM messages
@@ -150,6 +157,7 @@ export async function listConversationsForUser(userId: string): Promise<Conversa
     otherParticipant: row.other_user_id
       ? { id: row.other_user_id, displayName: row.other_display_name }
       : null,
+    ...(row.group_id ? { group: { id: row.group_id, name: row.group_name ?? '', kind: row.group_kind ?? 'general' } } : {}),
     lastMessage: row.last_message_id
       ? {
           id: row.last_message_id,

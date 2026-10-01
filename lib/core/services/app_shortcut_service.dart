@@ -28,7 +28,7 @@ class AppShortcutService {
   final ValueNotifier<String?> pendingAction = ValueNotifier(null);
 
   /// Registers the shortcut and its launch handler. Call once, before
-  /// `runApp` — safe to call before Firebase/auth initialize, since this
+  /// `runApp` — safe to call before auth/session restore, since this
   /// only sets up a platform channel and doesn't touch either.
   Future<void> init() async {
     await _quickActions.initialize((type) {

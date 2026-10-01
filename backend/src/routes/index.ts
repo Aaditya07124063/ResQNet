@@ -1,3 +1,4 @@
+import { accountRouter } from './accountRoutes';
 import { Router } from 'express';
 import { requireAuth } from '../middleware/authMiddleware';
 import { authRouter } from './authRoutes';
@@ -10,6 +11,9 @@ import { deviceRouter } from './deviceRoutes';
 import { internalRouter } from './internalRoutes';
 import { conversationRouter } from './conversationRoutes';
 import { nearbyAlertRouter } from './nearbyAlertRoutes';
+import { seismicRouter } from './seismicRoutes';
+import { groupRouter } from './groupRoutes';
+import { alertRouter } from './alertRoutes';
 
 export const router = Router();
 
@@ -23,10 +27,14 @@ router.use('/devices', deviceRouter);
 router.use('/internal', internalRouter);
 router.use('/conversations', conversationRouter);
 router.use('/nearby-alerts', nearbyAlertRouter);
+router.use('/seismic', seismicRouter);
+router.use('/groups', groupRouter);
+router.use('/alerts', alertRouter);
 
 // Minimal authenticated identity-check endpoint, useful for the Flutter
 // client to verify its token/backend wiring end-to-end. Group-chat routes
 // are added in their own later phase rather than scaffolded empty here.
+router.use('/me', accountRouter);
 router.get('/me', requireAuth, (req, res) => {
   res.json({ user: req.authUser });
 });

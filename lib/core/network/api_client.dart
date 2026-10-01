@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'api_config.dart';
 import 'api_exception.dart';
@@ -17,6 +18,31 @@ import 'token_storage.dart';
 /// Future and then retries with the resulting new access token. A
 /// request is retried at most once; if the refresh itself fails, the
 /// local session is cleared and the original 401 is surfaced.
+/// True when a [SocketException] happened before a connection existed
+/// (offline, DNS failure, refused), so the request cannot have been sent.
+bool isPreConnectFailure(SocketException e) {
+  final text = '${e.message} ${e.osError?.message ?? ''}'.toLowerCase();
+  return text.contains('failed host lookup') ||
+      text.contains('connection refused') ||
+      text.contains('network is unreachable') ||
+      text.contains('no route to host') ||
+      text.contains('no address associated');
+}
+
+/// How a refresh attempt ended.
+enum RefreshOutcome {
+  /// New tokens stored.
+  refreshed,
+
+  /// The server rejected the refresh token (or none was stored) — the
+  /// session is over and local tokens are cleared.
+  rejected,
+
+  /// The server could not be reached — tokens are kept, so the session
+  /// resumes when connectivity returns (offline-first).
+  offline,
+}
+
 class ApiClient {
   ApiClient({http.Client? httpClient}) : _httpClient = httpClient ?? http.Client();
 
@@ -31,7 +57,7 @@ class ApiClient {
   /// Guards concurrent refresh attempts — see the class doc comment.
   /// Cleared once the in-flight refresh settles (success or failure) so a
   /// later, separate 401 can trigger a fresh refresh cycle.
-  Future<bool>? _refreshFuture;
+  Future<RefreshOutcome>? _refreshFuture;
 
   Future<Map<String, dynamic>> post(
     String path, {
@@ -83,7 +109,14 @@ class ApiClient {
   /// 401-triggered refresh below, so calling this explicitly can never
   /// race with — or duplicate — a refresh a concurrent request happens to
   /// be triggering at the same moment.
-  Future<bool> refreshSession() => _refreshSession();
+  Future<bool> refreshSession() async => await refreshSessionOutcome() == RefreshOutcome.refreshed;
+
+  Future<RefreshOutcome> refreshSessionOutcome() => _refreshSession();
+
+  /// Fires when the backend definitively ends the session (refresh token
+  /// rejected), so the auth gate can return to sign-in. Never fires for a
+  /// network failure.
+  static final ValueNotifier<int> sessionEnded = ValueNotifier<int>(0);
 
   Future<Map<String, dynamic>> _send(
     String method,
@@ -113,8 +146,10 @@ class ApiClient {
       }
       final streamed = await _httpClient.send(request).timeout(_timeout);
       response = await http.Response.fromStream(streamed);
-    } on SocketException {
-      throw ApiException.network('No connection to the ResQNet server');
+    } on SocketException catch (e) {
+      throw isPreConnectFailure(e)
+          ? ApiException.noConnection('No connection to the ResQNet server')
+          : ApiException.network('No connection to the ResQNet server');
     } on HttpException {
       throw ApiException.network('Could not reach the ResQNet server');
     } catch (e) {
@@ -130,7 +165,7 @@ class ApiClient {
     // request's 401, and never on the retry itself (isRetryAfterRefresh
     // guards that) — this is what makes infinite loops impossible.
     if (response.statusCode == 401 && auth && !isRetryAfterRefresh) {
-      final refreshed = await _refreshSession();
+      final refreshed = await _refreshSession() == RefreshOutcome.refreshed;
       if (refreshed) {
         return _send(
           method,
@@ -163,15 +198,15 @@ class ApiClient {
     throw ApiException(statusCode: response.statusCode, code: code, message: message);
   }
 
-  Future<bool> _refreshSession() {
+  Future<RefreshOutcome> _refreshSession() {
     return _refreshFuture ??= _performRefresh().whenComplete(() => _refreshFuture = null);
   }
 
-  Future<bool> _performRefresh() async {
+  Future<RefreshOutcome> _performRefresh() async {
     final refreshToken = await TokenStorage.instance.readRefreshToken();
     if (refreshToken == null) {
       await TokenStorage.instance.clear();
-      return false;
+      return RefreshOutcome.rejected;
     }
     try {
       // auth: false — the refresh endpoint takes the refresh token in the
@@ -184,10 +219,21 @@ class ApiClient {
         accessToken: session['accessToken'] as String,
         refreshToken: session['refreshToken'] as String,
       );
-      return true;
-    } catch (_) {
+      return RefreshOutcome.refreshed;
+    } on ApiException catch (e) {
+      // No connection or a server outage says nothing about the refresh
+      // token — keep the session so the user is not signed out by going
+      // offline (common in the emergencies this app is for).
+      if (e.isNetworkError || e.isServerError) return RefreshOutcome.offline;
       await TokenStorage.instance.clear();
-      return false;
+      sessionEnded.value++;
+      return RefreshOutcome.rejected;
+    } catch (_) {
+      // Malformed response: treat as a rejected session rather than keep
+      // retrying with tokens the server did not accept.
+      await TokenStorage.instance.clear();
+      sessionEnded.value++;
+      return RefreshOutcome.rejected;
     }
   }
 }

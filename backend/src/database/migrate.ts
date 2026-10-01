@@ -46,8 +46,17 @@ async function main(): Promise<void> {
     }
     const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
     logger.info({ file }, 'Applying migration');
-    await client.query(sql);
-    await client.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [file]);
+    // The file and its schema_migrations row commit together: a failure
+    // leaves neither behind, so fixing the file and rerunning is safe.
+    await client.query('BEGIN');
+    try {
+      await client.query(sql);
+      await client.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [file]);
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    }
     logger.info({ file }, 'Migration applied');
   }
 

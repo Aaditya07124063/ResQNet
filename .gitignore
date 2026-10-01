@@ -68,3 +68,6 @@ ios/Pods/
 
 # Gradle generated reports
 android/build/reports/
+
+# Local editor/tooling state — never commit
+.claude/

@@ -1,0 +1,54 @@
+{
+  "note": "Test fixture only. Throwaway key (private key discarded); not used anywhere else.",
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2F6LSu8jMa8EHH4ReQNw0IAMXFsm\nsRJ9OQe9rGBzkmvJXYZpCX3ajScCBnX/Y/cjsm86Lg5svmkNWBgyDd4EOQ==\n-----END PUBLIC KEY-----\n",
+  "alert": {
+    "id": "55555555-5555-4555-8555-555555555555",
+    "sourceType": "official",
+    "sourceName": "Test Authority — नमुना",
+    "category": "flood",
+    "severity": "warning",
+    "status": "active",
+    "title": "Flood warning: river rising",
+    "body": "Move to higher ground.\nAvoid the river bank.",
+    "instructions": null,
+    "area": {
+      "latitude": 27.7172,
+      "longitude": 85.324,
+      "radiusKm": 5,
+      "province": "Bagmati",
+      "district": null,
+      "municipality": null
+    },
+    "issuedAt": "2026-09-27T10:00:00.000Z",
+    "expiresAt": "2099-01-01T00:00:00.000Z",
+    "resolvedAt": null,
+    "updatedAt": "2026-09-27T10:05:00.000Z",
+    "signature": "MEYCIQCMhIxLzhp7Yn3sy5F4iiViZvOaKxLAmwEbmb0ZpBN4rwIhALlItIoawCWuwEhfwgLoSXZcB9LraX/LCpzOiPs2i12R",
+    "signingKeyId": "KA1JPZCKWiii4bnPE5GJMSotuK49Rvkw3i03oZifIxg"
+  },
+  "olderVersion": {
+    "id": "55555555-5555-4555-8555-555555555555",
+    "sourceType": "official",
+    "sourceName": "Test Authority — नमुना",
+    "category": "flood",
+    "severity": "watch",
+    "status": "active",
+    "title": "Flood watch (older version)",
+    "body": "Move to higher ground.\nAvoid the river bank.",
+    "instructions": null,
+    "area": {
+      "latitude": 27.7172,
+      "longitude": 85.324,
+      "radiusKm": 5,
+      "province": "Bagmati",
+      "district": null,
+      "municipality": null
+    },
+    "issuedAt": "2026-09-27T10:00:00.000Z",
+    "expiresAt": "2099-01-01T00:00:00.000Z",
+    "resolvedAt": null,
+    "updatedAt": "2026-09-27T10:00:00.000Z",
+    "signature": "MEUCIQDwAySKcqRqc7hkFMr5wNzjRsxNH8yeWG2peF3/NNtVsQIgQf6sZLrRvkv/iKk6vgPQlcPc0WC9Q2opcJRSyrXYuPI=",
+    "signingKeyId": "KA1JPZCKWiii4bnPE5GJMSotuK49Rvkw3i03oZifIxg"
+  }
+}

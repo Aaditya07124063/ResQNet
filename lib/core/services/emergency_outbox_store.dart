@@ -37,6 +37,18 @@ class EmergencyOutboxStore {
   final String _outboxKey;
   final String _processedIdsKey;
 
+  /// Serializes read-modify-write operations. SOS creation, mesh delivery
+  /// bookkeeping, and background sync all update this store, and each
+  /// write rewrites the whole persisted list — without this, two
+  /// overlapping updates could silently drop one of them.
+  Future<void> _writeChain = Future<void>.value();
+
+  Future<T> _serialized<T>(Future<T> Function() action) {
+    final result = _writeChain.then((_) => action());
+    _writeChain = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
   /// Hard cap on how many processed-message records are retained — a
   /// flood of distinct fake event/message ids must not grow this
   /// structure without bound (Section 12/21: bounded storage, never
@@ -76,7 +88,25 @@ class EmergencyOutboxStore {
   /// Inserts a new entry or replaces an existing one with the same
   /// eventId — upsert semantics, so re-persisting an entry after a state
   /// change never creates a duplicate row.
-  Future<void> upsert(EmergencyOutboxEntry entry) async {
+  Future<void> upsert(EmergencyOutboxEntry entry) => _serialized(() => _upsert(entry));
+
+  /// Atomically applies [change] to the current stored version of the entry
+  /// (if it exists) — for callers that only own one aspect of an entry
+  /// (e.g. mesh delivery bookkeeping) and must not overwrite concurrent
+  /// changes to the rest of it.
+  Future<EmergencyOutboxEntry?> update(
+    String eventId,
+    EmergencyOutboxEntry Function(EmergencyOutboxEntry current) change,
+  ) =>
+      _serialized(() async {
+        final current = await get(eventId);
+        if (current == null) return null;
+        final next = change(current);
+        await _upsert(next);
+        return next;
+      });
+
+  Future<void> _upsert(EmergencyOutboxEntry entry) async {
     final all = await loadAll();
     final idx = all.indexWhere((e) => e.eventId == entry.eventId);
     if (idx == -1) {
@@ -107,14 +137,19 @@ class EmergencyOutboxStore {
   /// Section 42: relay/local storage must not grow forever). Kept for a
   /// while after reaching a terminal state so the user's own SOS history
   /// UI can still show "delivered"/"failed" for a recent event.
-  Future<void> pruneTerminal({Duration olderThan = const Duration(days: 7)}) async {
-    final all = await loadAll();
-    final cutoff = DateTime.now().subtract(olderThan);
-    final kept = all.where((e) => !e.isTerminal || e.createdAt.isAfter(cutoff)).toList();
-    if (kept.length != all.length) {
-      await _saveAll(kept);
-    }
-  }
+  Future<void> pruneTerminal({Duration olderThan = const Duration(days: 7)}) => _serialized(() async {
+        final all = await loadAll();
+        final cutoff = DateTime.now().subtract(olderThan);
+        // An entry whose cancellation still has to reach the backend is
+        // kept regardless of age.
+        final kept = all
+            .where((e) =>
+                !e.isTerminal || e.createdAt.isAfter(cutoff) || e.resolutionSync == ResolutionSyncState.pending)
+            .toList();
+        if (kept.length != all.length) {
+          await _saveAll(kept);
+        }
+      });
 
   // --- Processed-message dedup (inbox side) ---
 
@@ -133,12 +168,12 @@ class EmergencyOutboxStore {
   /// [processedIdRetention] — bounded storage, matching Section 12's
   /// relay-queue requirement even though this structure isn't the relay
   /// queue itself (MeshService's own relay path uses this same store).
-  Future<void> markProcessed(String id) async {
-    final map = await _loadProcessedIds();
-    map[id] = DateTime.now();
-    _evictStaleAndExcess(map);
-    await _saveProcessedIds(map);
-  }
+  Future<void> markProcessed(String id) => _serialized(() async {
+        final map = await _loadProcessedIds();
+        map[id] = DateTime.now();
+        _evictStaleAndExcess(map);
+        await _saveProcessedIds(map);
+      });
 
   void _evictStaleAndExcess(Map<String, DateTime> map) {
     final cutoff = DateTime.now().subtract(processedIdRetention);

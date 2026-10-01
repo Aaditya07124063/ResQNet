@@ -26,7 +26,8 @@ import 'motion_sensor_service.dart';
 /// Pipeline: shared accelerometer (MotionSensorService, gravity already
 /// removed) → amplitude gate → STA/LTA → sustained-duration + oscillation
 /// checks → confidence → state machine → (optional) multi-device
-/// correlation via Firestore → user confirmation → SOS, same as crash.
+/// correlation via the ResQNet backend (EarthquakeCorrelationService) →
+/// user confirmation → SOS, same as crash.
 class SeismicService extends ChangeNotifier {
   final EarthquakeConfig config;
   final EarthquakeCorrelationService correlation;

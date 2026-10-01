@@ -1,57 +1,48 @@
 import type { SmsProvider } from './SmsProvider';
+import { SmsProviderError } from './SmsProviderError';
+import { classifyHttpStatus, providerFetch, readJson } from './http';
 
-// Sparrow SMS (https://docs.sparrowsms.com/, cross-referenced against
-// https://sparrowsms.com/blog/send-sms-with-sparrow-api/ and
-// https://github.com/sparrowsms/apidocs) — chosen as ResQNet's first real
-// SMS adapter: direct domestic connectivity to all four Nepali carriers
-// (Nepal Telecom, Ncell, United Telecom, Smart Telecom), ResQNet's primary
-// user base, and no TRAI-DLT-style template/registration bureaucracy
-// (unlike the India-centric alternatives researched alongside it —
-// MSG91/2Factor/SMSCountry — where unregistered senders are silently
-// dropped network-side).
-//
-// NOT VERIFIED against a real send yet (per this phase's explicit "do not
-// send real SMS" instruction) — the `to` field's exact accepted shape
-// (bare 10-digit local vs. a 977-prefixed form) is inferred from docs, not
-// confirmed live; see the final report's "live testing" section.
+// Sparrow SMS v2 (https://docs.sparrowsms.com/sms/outgoing_sendsms/) —
+// direct domestic connectivity to Nepali carriers, ResQNet's primary user
+// base, with no DLT-style template registration. Documented contract:
+// POST form fields token/from/to/text; `to` is a bare 10-digit Nepali
+// mobile number (no country code); success is HTTP 200 with
+// response_code 200; failures are HTTP 403 with a numeric response_code.
+// Sparrow only delivers to Nepal, so any other destination is reported as
+// `unsupported` and the fallback chain moves on to the next provider.
 const SPARROW_API_ENDPOINT = 'https://api.sparrowsms.com/v2/sms/';
 
-interface SparrowSuccessResponse {
-  count: number;
-  response_code: number;
-  response: string;
-}
-
-interface SparrowErrorResponse {
-  response_code: number;
-  response: string;
+interface SparrowResponse {
+  count?: number;
+  response_code?: number;
+  response?: string;
 }
 
 export interface SparrowSmsCredentials {
-  /** Sparrow API token — the ONLY secret field; lives in
-   * sms_providers.encrypted_credentials, decrypted just-in-time by
-   * smsService.ts. Never logged, never included in a thrown error message. */
+  /** Sparrow API token — the ONLY secret field. Never logged. */
   token: string;
 }
 
 export interface SparrowSmsConfiguration {
-  /** Sparrow Sender ID — public (it appears in the delivered SMS itself),
-   * so this lives in sms_providers.configuration (plain JSONB), not the
-   * encrypted blob. Must be pre-approved in the Sparrow dashboard. */
+  /** Sparrow Sender ID, pre-approved in the Sparrow dashboard. */
   from: string;
 }
 
-/** Sparrow's documented API expects a bare 10-digit Nepali local number,
- * not E.164 — our verification/session layer works in E.164 throughout, so
- * this adapter strips the country code at the boundary. Defensive/tolerant
- * of "+977", "977", or an already-bare number, since ResQNet is Nepal-only
- * for this provider. */
-function toSparrowLocalFormat(e164: string): string {
-  const digitsOnly = e164.replace(/[^\d]/g, '');
-  if (digitsOnly.startsWith('977') && digitsOnly.length > 10) {
-    return digitsOnly.slice(3);
-  }
-  return digitsOnly;
+/** +977 followed by a 10-digit mobile number → the bare 10 digits Sparrow
+ * expects; anything else is not a Nepali mobile number. */
+export function toSparrowLocalFormat(e164: string): string | null {
+  const match = /^\+977(\d{10})$/.exec(e164.trim());
+  return match ? match[1]! : null;
+}
+
+// Documented Sparrow codes: 1002 invalid token, 1008 invalid sender
+// (configuration); 1007/1011 invalid or no valid receiver (recipient);
+// 1012/1013 insufficient credit (availability — another provider can send).
+function classifySparrowCode(code: number | undefined, status: number) {
+  if (code === 1007 || code === 1011) return 'recipient' as const;
+  if (code === 1012 || code === 1013) return 'availability' as const;
+  if (code !== undefined && code >= 1000) return 'configuration' as const;
+  return classifyHttpStatus(status);
 }
 
 export class SparrowSmsProvider implements SmsProvider {
@@ -61,40 +52,31 @@ export class SparrowSmsProvider implements SmsProvider {
   ) {}
 
   async send(to: string, message: string): Promise<{ providerMessageId?: string }> {
-    const body = new URLSearchParams({
-      token: this.credentials.token,
-      from: this.configuration.from,
-      to: toSparrowLocalFormat(to),
-      text: message,
+    const local = toSparrowLocalFormat(to);
+    if (!local) throw new SmsProviderError('unsupported', 'Sparrow SMS only delivers to Nepali mobile numbers');
+
+    const response = await providerFetch(SPARROW_API_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        token: this.credentials.token,
+        from: this.configuration.from,
+        to: local,
+        text: message,
+      }),
     });
 
-    let response: Response;
-    try {
-      response = await fetch(SPARROW_API_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body,
-      });
-    } catch {
-      // Network-level failure — never include `body`/credentials in the
-      // thrown error (it would otherwise carry the API token).
-      throw new Error('Sparrow SMS: network request failed');
+    const parsed = await readJson<SparrowResponse>(response);
+    if (!response.ok || parsed?.response_code !== 200) {
+      const code = parsed?.response_code;
+      throw new SmsProviderError(
+        classifySparrowCode(code, response.status),
+        `Sparrow SMS rejected request (HTTP ${response.status})`,
+        code !== undefined ? String(code) : undefined,
+      );
     }
 
-    let parsed: SparrowSuccessResponse | SparrowErrorResponse;
-    try {
-      parsed = (await response.json()) as SparrowSuccessResponse | SparrowErrorResponse;
-    } catch {
-      throw new Error(`Sparrow SMS: non-JSON response (HTTP ${response.status})`);
-    }
-
-    if (!response.ok || parsed.response_code !== 200) {
-      // Sparrow's documented error codes (1002 invalid token, 1008 invalid
-      // sender, 1011 no valid receiver, 1013 insufficient credits) are
-      // safe to surface — they're provider-side status codes, not secrets.
-      throw new Error(`Sparrow SMS send failed: ${parsed.response_code} ${parsed.response}`);
-    }
-
+    // Sparrow does not document a per-message id.
     return {};
   }
 }

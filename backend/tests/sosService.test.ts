@@ -109,6 +109,7 @@ describe('createSosEvent', () => {
       serverReceivedAt: '2026-01-01T00:00:01.000Z',
       resolvedAt: null,
       originVerificationState: 'not_applicable',
+      sensitiveRemoved: false,
     });
   });
 
@@ -216,6 +217,47 @@ describe('listSosEvents', () => {
 });
 
 describe('updateSosEventStatus', () => {
+  const flushAsync = () => new Promise((resolve) => setImmediate(resolve));
+
+  it('accepts either the server row id or the client eventId', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [fakeSosEventRow({ status: 'acknowledged' })] });
+    await updateSosEventStatus('user-1', 'client-event-id', { status: 'acknowledged' });
+    expect(mockPoolQuery.mock.calls[0]?.[0]).toMatch(/\(id = \$3 OR event_id = \$3\) AND user_id = \$4/);
+  });
+
+  it('tells previously alerted recipients when an SOS is resolved, respecting the nearby privacy split', async () => {
+    mockGetUserById.mockResolvedValue({ displayName: 'Asha' });
+    mockNotifyUsersDevices.mockResolvedValue(new Map());
+    mockPoolQuery
+      .mockResolvedValueOnce({ rows: [fakeSosEventRow({ status: 'resolved', resolved_at: new Date() })] })
+      .mockResolvedValueOnce({
+        rows: [
+          { recipient_user_id: 'trusted-1', recipient_category: 'trusted_contact' },
+          { recipient_user_id: 'nearby-1', recipient_category: 'nearby' },
+        ],
+      });
+
+    await updateSosEventStatus('user-1', 'event-1', { status: 'resolved' });
+    await flushAsync();
+
+    expect(mockNotifyUsersDevices).toHaveBeenCalledTimes(2);
+    const [trustedIds, trustedContent] = mockNotifyUsersDevices.mock.calls[0]!;
+    expect(trustedIds).toEqual(['trusted-1']);
+    expect(trustedContent.title).toContain('Asha');
+    expect(trustedContent.data.type).toBe('sos_resolved');
+    const [nearbyIds, nearbyContent] = mockNotifyUsersDevices.mock.calls[1]!;
+    expect(nearbyIds).toEqual(['nearby-1']);
+    expect(nearbyContent.title).not.toContain('Asha');
+  });
+
+  it('does not send resolution pushes for a non-terminal status', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [fakeSosEventRow({ status: 'acknowledged' })] });
+    await updateSosEventStatus('user-1', 'event-1', { status: 'acknowledged' });
+    await flushAsync();
+    expect(mockPoolQuery).toHaveBeenCalledTimes(1);
+    expect(mockNotifyUsersDevices).not.toHaveBeenCalled();
+  });
+
   it('sets resolved_at when transitioning to a terminal status', async () => {
     mockPoolQuery.mockResolvedValueOnce({ rows: [fakeSosEventRow({ status: 'resolved', resolved_at: new Date('2026-01-02T00:00:00Z') })] });
 

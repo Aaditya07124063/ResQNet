@@ -127,7 +127,14 @@ describe('createSosEvent — nearby ResQNet user push (replaces the old unscoped
     expect(content.body).toContain('Within 1 km');
     expect(content.body).not.toContain('Reporter Name');
     expect(content.body).not.toContain('need help');
-    expect(content.data).toEqual({ sosEventId: 'event-1', category: 'medical' });
+    // `type` routes the notification; `eventId` is the opaque client id used
+    // only to de-duplicate with the mesh copy — neither identifies anyone.
+    expect(content.data).toEqual({
+      type: 'sos_nearby',
+      sosEventId: 'event-1',
+      eventId: 'client-event-1',
+      category: 'medical',
+    });
     expect(content.data.latitude).toBeUndefined();
     expect(content.data.longitude).toBeUndefined();
   });
@@ -258,6 +265,24 @@ describe('createSosEvent — targeted push to trusted contacts who are ResQNet u
     const lastCall = mockPoolQuery.mock.calls[mockPoolQuery.mock.calls.length - 1];
     expect(lastCall[0]).toMatch(/UPDATE sos_recipients\s+SET status/);
     expect(lastCall[1]).toEqual(['sent', 'sent', 'push-recipient-1']);
+  });
+
+  it('never puts the SOS message (which may hold opted-in medical details) into the trusted-contact push', async () => {
+    const medicalMessage = '🚗 VEHICLE CRASH DETECTED — AUTO SOS\nBlood: O+ | Allergies: penicillin';
+    mockPoolQuery
+      .mockResolvedValueOnce({ rows: [fakeSosEventRow({ message: medicalMessage })] })
+      .mockResolvedValueOnce({ rows: [] });
+    mockOneTrustedContactWhoIsAUser();
+    mockNotifyUsersDevices.mockResolvedValueOnce(new Map([['contact-user-1', 'sent']]));
+
+    await createSosEvent('user-1', { ...INPUT, message: medicalMessage });
+
+    const content = mockNotifyUsersDevices.mock.calls[0][1];
+    expect(content.body).toMatch(/needs emergency assistance — open ResQNet\.$/);
+    const everything = JSON.stringify(content);
+    for (const leaked of ['Blood', 'O+', 'Allergies', 'penicillin', 'CRASH']) {
+      expect(everything).not.toContain(leaked);
+    }
   });
 
   it('updates the row to "failed" when the outcome is failed', async () => {

@@ -12,6 +12,7 @@ import { pool } from '../src/database/pool';
 import { decryptCredentials } from '../src/utils/credentialEncryption';
 import { SparrowSmsProvider } from '../src/services/sms/SparrowSmsProvider';
 import { sendSms } from '../src/services/sms/smsService';
+import { SmsProviderError } from '../src/services/sms/SmsProviderError';
 
 const mockQuery = pool.query as jest.Mock;
 const mockDecrypt = decryptCredentials as jest.Mock;
@@ -93,5 +94,82 @@ describe('smsService.sendSms', () => {
   it('throws for an unrecognized provider_type rather than guessing an adapter', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [providerRow({ provider_type: 'unknown_provider' })] });
     await expect(sendSms('+9779812345678', 'hi')).rejects.toThrow(/not currently available/);
+  });
+
+  describe('fallback policy', () => {
+    beforeEach(() => MockSparrowSmsProvider.mockReset());
+
+    function chain(...sends: jest.Mock[]) {
+      for (const send of sends) MockSparrowSmsProvider.mockImplementationOnce(() => ({ send }));
+      mockQuery.mockResolvedValueOnce({
+        rows: sends.map((_, i) => providerRow({ id: `p${i}`, priority: i + 1 })),
+      });
+    }
+
+    it('orders ties deterministically by creation time', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      await expect(sendSms('+9779812345678', 'hi')).rejects.toThrow();
+      expect(mockQuery.mock.calls[0][0]).toMatch(/ORDER BY priority ASC, created_at ASC/);
+    });
+
+    it('returns which provider accepted the message', async () => {
+      chain(jest.fn().mockResolvedValue({ providerMessageId: 'm-1' }));
+      await expect(sendSms('+9779812345678', 'hi')).resolves.toEqual({
+        providerId: 'p0',
+        providerType: 'sparrow_sms',
+        providerMessageId: 'm-1',
+      });
+    });
+
+    it.each(['availability', 'configuration', 'unsupported'] as const)(
+      'advances past a %s failure and re-sends the identical message',
+      async (kind) => {
+        const first = jest.fn().mockRejectedValue(new SmsProviderError(kind, 'x'));
+        const second = jest.fn().mockResolvedValue({});
+        chain(first, second);
+
+        const result = await sendSms('+9779812345678', 'Your code is 123456');
+
+        expect(result.providerId).toBe('p1');
+        expect(second).toHaveBeenCalledWith('+9779812345678', 'Your code is 123456');
+      },
+    );
+
+    it('stops at a recipient rejection and reports it as a 400', async () => {
+      const first = jest.fn().mockRejectedValue(new SmsProviderError('recipient', 'bad number'));
+      const second = jest.fn().mockResolvedValue({});
+      chain(first, second);
+
+      await expect(sendSms('+9779812345678', 'hi')).rejects.toMatchObject({ status: 400 });
+      expect(second).not.toHaveBeenCalled();
+    });
+
+    it('stops after the first accepted send (no duplicate deliveries)', async () => {
+      const first = jest.fn().mockResolvedValue({});
+      const second = jest.fn().mockResolvedValue({});
+      chain(first, second);
+
+      await sendSms('+9779812345678', 'hi');
+      expect(second).not.toHaveBeenCalled();
+    });
+
+    it('tries each enabled provider exactly once before failing', async () => {
+      const sends = [1, 2, 3].map(() => jest.fn().mockRejectedValue(new SmsProviderError('availability', 'down')));
+      chain(...sends);
+
+      await expect(sendSms('+9779812345678', 'hi')).rejects.toMatchObject({ status: 500 });
+      for (const send of sends) expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats an undecryptable credential blob as a configuration failure and moves on', async () => {
+      mockDecrypt.mockImplementationOnce(() => {
+        throw new Error('auth tag mismatch');
+      });
+      const second = jest.fn().mockResolvedValue({});
+      MockSparrowSmsProvider.mockImplementationOnce(() => ({ send: second }));
+      mockQuery.mockResolvedValueOnce({ rows: [providerRow({ id: 'p0' }), providerRow({ id: 'p1', priority: 2 })] });
+
+      await expect(sendSms('+9779812345678', 'hi')).resolves.toMatchObject({ providerId: 'p1' });
+    });
   });
 });

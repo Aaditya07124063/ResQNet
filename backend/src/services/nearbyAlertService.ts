@@ -1,3 +1,4 @@
+import { cutoff } from './retention/retentionPolicy';
 import { pool } from '../database/pool';
 import { env } from '../config/env';
 import type { UpdateNearbyPreferenceInput } from '../validation/nearbyAlertSchemas';
@@ -181,13 +182,17 @@ export async function findNearbyEligibleUsers(
        AND p.enabled = TRUE
        AND nal.user_id != $1
        AND nal.latitude BETWEEN $2 AND $3
-       AND nal.longitude BETWEEN $4 AND $5`,
+       AND nal.longitude BETWEEN $4 AND $5
+       -- A saved location older than the retention window is neither
+       -- reliable nor kept on purpose: ignore it even before it is purged.
+       AND nal.updated_at > $6`,
     [
       reporterUserId,
       latitude - latDeltaDeg,
       latitude + latDeltaDeg,
       longitude - lngDeltaDeg,
       longitude + lngDeltaDeg,
+      cutoff(new Date(), env.RETENTION_NEARBY_LOCATION_DAYS),
     ],
   );
   if (rows.length === 0) return [];

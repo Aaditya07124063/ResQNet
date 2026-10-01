@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../groups/groups_screen.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/models/conversation.dart';
 import '../../core/models/message.dart';
@@ -52,6 +53,13 @@ class _ConversationsListScreenState extends State<ConversationsListScreen> {
           icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          TextButton.icon(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const GroupsScreen())),
+            icon: const Icon(Icons.groups),
+            label: const Text('Groups'),
+          ),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: () => context.read<CommunicationService>().loadConversations(),
@@ -85,15 +93,17 @@ class _ConversationsListScreenState extends State<ConversationsListScreen> {
                     separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.lowGrey.withValues(alpha: 0.2)),
                     itemBuilder: (context, index) {
                       final conversation = comms.conversations[index];
-                      final name = conversation.otherParticipantName ?? 'ResQNet user';
+                      final name = conversation.title;
                       final hasUnread = conversation.unreadCount > 0;
                       return ListTile(
                         leading: CircleAvatar(
                           backgroundColor: AppColors.accentBlue.withValues(alpha: 0.15),
-                          child: Text(
-                            name.isNotEmpty ? name[0].toUpperCase() : '?',
-                            style: TextStyle(color: AppColors.accentBlue, fontWeight: FontWeight.bold),
-                          ),
+                          child: conversation.isGroup
+                              ? Icon(Icons.groups, color: AppColors.accentBlue)
+                              : Text(
+                                  name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                  style: TextStyle(color: AppColors.accentBlue, fontWeight: FontWeight.bold),
+                                ),
                         ),
                         title: Text(name,
                             style: TextStyle(

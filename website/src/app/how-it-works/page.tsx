@@ -2,6 +2,7 @@ import { CheckCircle2, Compass } from "lucide-react";
 import { Container } from "@/components/layout/Container";
 import { PageHero } from "@/components/sections/PageHero";
 import { SectionHeading } from "@/components/ui/SectionHeading";
+import { StoreAndForwardDemo } from "@/components/sections/StoreAndForwardDemo";
 import { Button } from "@/components/ui/Button";
 import { howItWorksSteps, resilientCommunicationStatus } from "@/content/how-it-works";
 import { pageMetadata } from "@/lib/seo";
@@ -82,6 +83,19 @@ export default function HowItWorksPage() {
               </li>
             ))}
           </ol>
+        </Container>
+      </section>
+
+      <section className="border-t border-border py-20 sm:py-28">
+        <Container>
+          <SectionHeading
+            eyebrow="When networks fail"
+            title="How an SOS travels with no signal."
+            description="Phones pass an emergency along until one of them reaches the Internet. Step through it below."
+          />
+          <div className="mt-10">
+            <StoreAndForwardDemo />
+          </div>
         </Container>
       </section>
 

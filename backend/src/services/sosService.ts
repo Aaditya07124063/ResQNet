@@ -1,7 +1,8 @@
 import { pool } from '../database/pool';
 import { HttpError } from '../utils/httpError';
 import { approximateDistanceLabel } from './nearbyAlertService';
-import { broadcastSosEvent, runFanOutAndNotify } from './sosFanOutService';
+import { broadcastSosEvent, notifySosResolved, runFanOutAndNotify } from './sosFanOutService';
+import { logger } from '../utils/logger';
 import { getDeviceKey } from './deviceKeyService';
 import { verifyOriginSignature } from '../utils/originSignature';
 import { toSosEvent, type DbSosEventRow, type SosEvent } from '../models/SosEvent';
@@ -243,6 +244,10 @@ export async function listSosEvents(userId: string): Promise<SosEvent[]> {
  * anyone through this route until it has a real, verified owner — which
  * is the correct behavior: nobody should be able to acknowledge/resolve
  * an emergency on behalf of an unconfirmed identity.
+ *
+ * `sosEventId` may be either the server row id or the client-generated
+ * `eventId` (both UUIDs, both unique): a device that raised an SOS offline
+ * only knows its own eventId, and must still be able to resolve it.
  */
 export async function updateSosEventStatus(
   userId: string,
@@ -250,11 +255,33 @@ export async function updateSosEventStatus(
   input: UpdateSosEventStatusInput,
 ): Promise<SosEvent> {
   const isTerminal = input.status === 'resolved' || input.status === 'false_alarm';
+  // One statement: update the civilian status and, when the civilian state
+  // actually changes (active / safe / cancelled), append it to the incident
+  // timeline so responders see it. The responder state (ops_status) and any
+  // assignment are left alone — only a responder closes an incident.
   const { rows } = await pool.query<DbSosEventRow>(
-    `UPDATE sos_events
-     SET status = $1, resolved_at = CASE WHEN $2 THEN now() ELSE resolved_at END
-     WHERE id = $3 AND user_id = $4
-     RETURNING *`,
+    `WITH prev AS (
+       SELECT id, status AS prev_status, ops_status FROM sos_events
+       WHERE (id = $3 OR event_id = $3) AND user_id = $4
+       FOR UPDATE
+     ),
+     upd AS (
+       UPDATE sos_events e
+       SET status = $1, resolved_at = CASE WHEN $2 THEN now() ELSE e.resolved_at END
+       FROM prev WHERE e.id = prev.id
+       RETURNING e.*, prev.prev_status
+     ),
+     civilian AS (
+       SELECT id,
+              CASE prev_status WHEN 'resolved' THEN 'safe' WHEN 'false_alarm' THEN 'cancelled' ELSE 'active' END AS before,
+              CASE status WHEN 'resolved' THEN 'safe' WHEN 'false_alarm' THEN 'cancelled' ELSE 'active' END AS after
+       FROM upd
+     ),
+     timeline AS (
+       INSERT INTO sos_incident_updates (sos_event_id, action, previous_state, new_state)
+       SELECT id, 'civilian_state', before, after FROM civilian WHERE before <> after
+     )
+     SELECT * FROM upd`,
     [input.status, isTerminal, sosEventId, userId],
   );
   const row = rows[0];
@@ -263,5 +290,10 @@ export async function updateSosEventStatus(
   }
   const event = toSosEvent(row);
   broadcastSosEvent('sos_status_updated', userId, event);
+  if (isTerminal) {
+    notifySosResolved(event, userId).catch((err: unknown) =>
+      logger.warn({ err, sosEventId: event.id }, 'SOS resolution push failed'),
+    );
+  }
   return event;
 }

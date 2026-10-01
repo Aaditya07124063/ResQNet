@@ -73,6 +73,34 @@ const envSchema = z.object({
   // local dev, and the route safely 503s rather than accepting requests
   // with no real secret configured. NEVER log this value.
   SEISMIC_WEBHOOK_SECRET: z.string().optional(),
+  // Base64-encoded PKCS#8 PEM (EC P-256) used to sign emergency alerts so
+  // the app can verify them when they are relayed offline. Optional: when
+  // unset, alerts are served unsigned. The matching public key is built
+  // into the app (RESQNET_ALERT_PUBLIC_KEY).
+  OFFICIAL_ALERT_SIGNING_KEY: z.string().optional(),
+
+  // Data retention (docs/PRIVACY_AND_RETENTION.md). Defaults are ResQNet
+  // operational policy, not legal requirements. Minimums stop a typo such
+  // as 0 from purging data immediately.
+  RETENTION_SOS_SENSITIVE_DAYS: z.coerce.number().int().min(7).default(90),
+  RETENTION_SOS_DEIDENTIFY_DAYS: z.coerce.number().int().min(30).default(730),
+  /** Unset: de-identified incident records are kept (no automatic deletion). */
+  RETENTION_SOS_RECORD_DELETE_DAYS: z.coerce.number().int().min(365).optional(),
+  RETENTION_CHAT_LOCATION_DAYS: z.coerce.number().int().min(1).default(30),
+  RETENTION_DELETED_MESSAGE_DAYS: z.coerce.number().int().min(1).default(30),
+  RETENTION_NEARBY_LOCATION_DAYS: z.coerce.number().int().min(1).default(30),
+  RETENTION_SEISMIC_REPORT_DAYS: z.coerce.number().int().min(1).default(30),
+  RETENTION_OTP_DAYS: z.coerce.number().int().min(1).default(30),
+  RETENTION_SESSION_DAYS: z.coerce.number().int().min(1).default(30),
+  RETENTION_STALE_DEVICE_DAYS: z.coerce.number().int().min(30).default(180),
+  RETENTION_REVOKED_DEVICE_KEY_DAYS: z.coerce.number().int().min(30).default(365),
+  RETENTION_AUDIT_IP_DAYS: z.coerce.number().int().min(7).default(90),
+  RETENTION_AUDIT_LOG_DAYS: z.coerce.number().int().min(90).default(730),
+  RETENTION_CLOSED_ALERT_DAYS: z.coerce.number().int().min(30).default(365),
+  RETENTION_BATCH_SIZE: z.coerce.number().int().min(1).max(5000).default(500),
+  RETENTION_MAX_BATCHES: z.coerce.number().int().min(1).max(1000).default(20),
+  /** Unset: the in-process schedule is off; run `npm run retention:run` from the host scheduler instead. */
+  RETENTION_SCHEDULE_MINUTES: z.coerce.number().int().min(5).optional(),
 
   MINIO_ENDPOINT: z.string().default('127.0.0.1'),
   MINIO_PORT: z.coerce.number().int().positive().default(9000),
@@ -108,6 +136,10 @@ const envSchema = z.object({
   OTP_SEND_PHONE_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(3),
   OTP_VERIFY_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900_000),
   OTP_VERIFY_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+  // Admin "test provider" sends a real, billed SMS, so it gets a small
+  // per-employee budget independent of the general employee API limiter.
+  SMS_PROVIDER_TEST_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900_000),
+  SMS_PROVIDER_TEST_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(5),
 
   // Communication phase (chat): message sending is much higher-frequency
   // than SOS/reports by nature, so it gets its own, more generous budget
@@ -125,6 +157,8 @@ const envSchema = z.object({
   NEARBY_ALERT_DEFAULT_RADIUS_M: z.coerce.number().int().positive().default(5_000),
   NEARBY_ALERT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   NEARBY_ALERT_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
+  SEISMIC_REPORT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
+  SEISMIC_REPORT_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(5),
 
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 

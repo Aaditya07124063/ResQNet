@@ -163,3 +163,27 @@ export const employeeAuthRateLimiter = rateLimit({
   keyGenerator: (req) => req.ip ?? 'unknown',
   handler: (_req, _res, next) => next(HttpError.tooManyRequests('Too many employee authentication attempts')),
 });
+
+// Admin SMS-provider test sends (see smsProviderRoutes.ts): each one is a
+// real, billed SMS, so a compromised or careless employee session must not
+// be able to loop it. Runs after requireEmployeeAuth, so it is employee-keyed.
+export const smsProviderTestRateLimiter = rateLimit({
+  windowMs: env.SMS_PROVIDER_TEST_RATE_LIMIT_WINDOW_MS,
+  max: env.SMS_PROVIDER_TEST_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.authEmployee?.id ?? req.ip ?? 'unknown',
+  handler: (_req, _res, next) => next(HttpError.tooManyRequests('Too many SMS provider test sends — please wait')),
+});
+
+// Earthquake candidate reports (seismicRoutes.ts): a real detector fires
+// rarely, so a tight per-user budget stops one account flooding the
+// correlation table.
+export const seismicReportRateLimiter = rateLimit({
+  windowMs: env.SEISMIC_REPORT_RATE_LIMIT_WINDOW_MS,
+  max: env.SEISMIC_REPORT_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.authUser?.id ?? req.ip ?? 'unknown',
+  handler: (_req, _res, next) => next(HttpError.tooManyRequests('Too many earthquake reports — please wait')),
+});
