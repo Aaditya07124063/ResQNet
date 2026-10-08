@@ -6,9 +6,11 @@
 
 export const siteConfig = {
   name: "ResQNet",
-  tagline: "Communication when it matters most.",
+  tagline: "Offline Emergency Communication",
   description:
-    "ResQNet is an emergency communication app built to help people reach trusted contacts, share their situation, and coordinate during emergencies.",
+    "ResQNet is an offline-first emergency communication app. When mobile networks or the Internet are down, nearby phones relay SOS alerts, messages and location to each other over Bluetooth and Wi-Fi Direct.",
+  // Public source repository (README "Source Code" link and git remote).
+  githubUrl: "https://github.com/Aaditya07124063/ResQNet",
   // Confirmed live in lib/core/network/api_config.dart (production API
   // decision, 2026-09-05: https://api.resqnet.co verified via GET /health).
   url: "https://resqnet.co",
@@ -29,10 +31,10 @@ export type NavLink = {
 };
 
 export const primaryNav: NavLink[] = [
-  { label: "Home", href: "/" },
   { label: "How It Works", href: "/how-it-works/" },
   { label: "Features", href: "/features/" },
-  { label: "For Organizations", href: "/organizations/" },
+  { label: "For Civilians", href: "/how-it-works/#civilians" },
+  { label: "For Responders", href: "/organizations/" },
   { label: "Safety & Privacy", href: "/safety-privacy/" },
   { label: "About", href: "/about/" },
 ];
@@ -44,11 +46,14 @@ export const footerNav = {
     { label: "Download", href: "/download/" },
   ] satisfies NavLink[],
   organization: [
-    { label: "For Organizations", href: "/organizations/" },
-    { label: "Partnership", href: "/contact/?type=organization" },
+    { label: "For Civilians", href: "/how-it-works/#civilians" },
+    { label: "For Responders & EOCs", href: "/organizations/" },
+    { label: "Work With Us", href: "/contact/?type=organization" },
   ] satisfies NavLink[],
   company: [
     { label: "About", href: "/about/" },
+    { label: "Safety & Privacy", href: "/safety-privacy/" },
+    { label: "Source Code", href: "https://github.com/Aaditya07124063/ResQNet" },
     { label: "Contact", href: "/contact/" },
   ] satisfies NavLink[],
   legal: [

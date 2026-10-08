@@ -1,11 +1,13 @@
+import Link from "next/link";
 import { Container } from "@/components/layout/Container";
 import { PageHero } from "@/components/sections/PageHero";
 import { pageMetadata } from "@/lib/seo";
+import { siteConfig } from "@/content/site";
 
 export const metadata = pageMetadata({
   title: "About",
   description:
-    "Why ResQNet exists, the problem behind it, and the direction the project is headed.",
+    "Why ResQNet exists: emergency communication for people cut off by disasters or remote terrain, built offline-first, and where the project stands today.",
   path: "/about/",
 });
 
@@ -15,65 +17,72 @@ export default function AboutPage() {
       <PageHero
         eyebrow="About"
         title="Why ResQNet exists."
-        description="ResQNet started from a straightforward observation: the tools people reach for during an emergency are the same ones that can let them down at the worst time."
+        description="The networks people rely on to call for help are often the first thing a disaster takes down. ResQNet is built for that moment."
       />
 
       <section className="py-20 sm:py-28">
         <Container>
-          {/* A nested wrapper, not a className override on Container
-              itself — Container's own max-w-6xl and this max-w-2xl would
-              otherwise both target the same element, and Tailwind's
-              generated stylesheet order (not className order) decides
-              which one wins. Narrower than the site's default content
-              width on purpose: this is continuous prose, not cards/grids,
-              and reads better at a tighter, more editorial measure. */}
+          {/* Nested wrapper rather than a className override on Container:
+              both would target max-width, and Tailwind's stylesheet order
+              (not className order) decides which wins. */}
           <div className="mx-auto max-w-2xl space-y-14">
             <div>
-              <h2 className="text-2xl font-bold text-ink">The problem behind the project</h2>
+              <h2 className="text-2xl font-bold text-ink">The problem</h2>
               <p className="mt-4 text-base leading-relaxed text-ink-soft">
-                Phone calls go unanswered. Text messages queue up behind a
-                congested network. The person closest to an emergency often
-                doesn&apos;t know whether the people who matter to them have
-                actually been reached. And describing a location over a call,
-                in the middle of a stressful moment, wastes time that matters.
-                None of this is a hypothetical — it&apos;s the ordinary
-                experience of trying to communicate under pressure.
+                Earthquakes, floods, landslides and cyclones damage towers and
+                cut power. Networks that do survive are overloaded. Trekkers,
+                forest workers and rural communities are often outside coverage
+                to begin with. In those moments a phone can still do a great
+                deal: it has a radio, GPS and a battery. What it lacks is a way
+                to reach anyone.
               </p>
             </div>
 
             <div>
-              <h2 className="text-2xl font-bold text-ink">What ResQNet is built to do</h2>
+              <h2 className="text-2xl font-bold text-ink">What ResQNet is</h2>
               <p className="mt-4 text-base leading-relaxed text-ink-soft">
-                ResQNet is an emergency communication app built around a small
-                number of ideas that work together: a fast way to signal an
-                SOS, a trusted-contact list that&apos;s ready before it&apos;s
-                needed, location information attached automatically when it&apos;s
-                available, and a status that everyone involved can follow. It
-                also includes a device-to-device relay capability, so nearby
-                devices can stay in contact even when a mobile network isn&apos;t
-                cooperating.
+                ResQNet is offline-first emergency communication. Phones running
+                it connect directly over Bluetooth and Wi-Fi Direct, carry each
+                other&apos;s SOS alerts, and hand them on until one reaches the
+                Internet. From there an operations portal lets rescue teams,
+                NGOs, local authorities and emergency operations centers take
+                ownership of each incident. When the network is available,
+                ResQNet uses it too. The server adds to the mesh rather than
+                replacing it.
               </p>
               <p className="mt-4 text-base leading-relaxed text-ink-soft">
-                ResQNet runs its own backend and database rather than building
-                its emergency path entirely on top of a single third-party
-                service — the goal is for the parts that matter most during an
-                emergency to be under ResQNet&apos;s own control.
+                It is emergency infrastructure, not a social or chat app.
+                Everything in it is shaped by one question: does this help a
+                person who is cut off reach someone who can help?
               </p>
             </div>
 
             <div>
-              <h2 className="text-2xl font-bold text-ink">Where this is headed</h2>
+              <h2 className="text-2xl font-bold text-ink">Where it stands today</h2>
               <p className="mt-4 text-base leading-relaxed text-ink-soft">
-                ResQNet today is a mobile app for individuals. The longer-term
-                direction is for that same foundation — SOS, trusted contacts,
-                resilient communication — to support organizations,
-                institutions, and eventually collaboration with existing
-                emergency-response infrastructure. That&apos;s a direction we&apos;re
-                building toward, not a claim about what exists today. See{" "}
-                <a href="/organizations/" className="font-medium text-primary hover:underline">
-                  For Organizations
-                </a>{" "}
-                for more on that.
+                ResQNet is in active development, starting with Nepal and
+                India. The core SOS, mesh relay, store-and-forward and responder
+                workflow are implemented and covered by automated tests,
+                including simulated multi-hop delivery. They have not yet been
+                tested across many real phones in the field, and range, battery
+                and background behaviour still have to be measured. The app is
+                not yet in public app stores, and ResQNet is not integrated with
+                any government or emergency agency.
+              </p>
+              <p className="mt-4 text-base leading-relaxed text-ink-soft">
+                See{" "}
+                <Link href="/features/" className="font-medium text-primary hover:underline">
+                  Features
+                </Link>{" "}
+                for the status of each capability,{" "}
+                <Link href="/safety-privacy/" className="font-medium text-primary hover:underline">
+                  Safety &amp; Privacy
+                </Link>{" "}
+                for its limits, or read the{" "}
+                <a href={siteConfig.githubUrl} className="font-medium text-primary hover:underline">
+                  source code
+                </a>
+                .
               </p>
             </div>
           </div>

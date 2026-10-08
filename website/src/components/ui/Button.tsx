@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-type Variant = "primary" | "secondary" | "ghost" | "outlineOnDark";
+type Variant = "primary" | "secondary" | "ghost" | "outlineOnDark" | "light";
 type Size = "md" | "lg";
 
 // Each variant is a complete, self-contained style — never combined with
@@ -22,7 +22,9 @@ const variantStyles: Record<Variant, string> = {
   // For use on dark section backgrounds (e.g. the Hero) where "secondary"
   // (white fill) would fight the dark backdrop instead of sitting on it.
   outlineOnDark:
-    "bg-transparent text-white border border-white/25 hover:bg-white/10 hover:border-white/40",
+    "bg-transparent text-white border border-white/40 hover:bg-white/10 hover:border-white/70",
+  // Solid white call to action on dark sections and photographs.
+  light: "bg-white text-ink hover:bg-[var(--color-bg-subtle)]",
 };
 
 const sizeStyles: Record<Size, string> = {

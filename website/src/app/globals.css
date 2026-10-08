@@ -1,27 +1,29 @@
 @import "tailwindcss";
 
 :root {
+  /* Documentary palette: near-black, white, warm off-white, muted gray.
+     Red is reserved for SOS / danger / emergency actions only. */
+
   /* Ink / text */
-  --color-ink: #0b1220;
-  --color-ink-soft: #47536b;
-  --color-ink-faint: #6b7686;
+  --color-ink: #121314;
+  --color-ink-soft: #45474b;
+  --color-ink-faint: #64676c;
 
   /* Surfaces */
   --color-bg: #ffffff;
-  --color-bg-subtle: #f5f6f8;
-  --color-surface-dark: #0b1220;
-  --color-surface-dark-soft: #131c2e;
-  --color-border: #e2e5ea;
-  --color-border-dark: #232d42;
+  --color-bg-subtle: #f4f1ec;
+  --color-surface-dark: #0e0f10;
+  --color-surface-dark-soft: #1a1b1d;
+  --color-border: #e3dfd8;
+  --color-border-dark: #2a2b2e;
 
-  /* Brand — a restrained, technical teal. Red/amber are reserved for
-     literal alert states only (see --color-alert), never the theme. */
-  --color-primary: #0f6e66;
-  --color-primary-strong: #0a4f49;
-  --color-primary-soft: #e5f2f0;
+  /* "Primary" is now the ink itself — the brand is restraint, not a hue. */
+  --color-primary: #121314;
+  --color-primary-strong: #000000;
+  --color-primary-soft: #ebe7e0;
 
   /* Reserved for genuine emergency/status signaling only. */
-  --color-alert: #c4351c;
+  --color-alert: #b42318;
   --color-alert-soft: #fdece9;
   --color-warn: #a16207;
   --color-warn-soft: #fdf4e3;
@@ -29,6 +31,7 @@
   --color-success-soft: #e7f5ed;
 
   --font-sans: var(--font-inter);
+  --font-display: var(--font-barlow-condensed);
 }
 
 @theme inline {
@@ -51,6 +54,7 @@
   --color-success: var(--color-success);
   --color-success-soft: var(--color-success-soft);
   --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
 }
 
 body {
@@ -59,11 +63,20 @@ body {
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
+/* Editorial display type for page and section headings. */
+h1,
+h2 {
+  font-family: var(--font-display), var(--font-sans), ui-sans-serif, sans-serif;
+  letter-spacing: 0.005em;
+}
+
 /* Visible, high-contrast focus ring everywhere — never rely on the
-   browser default alone, and never remove it. */
+   browser default alone, and never remove it. The white halo keeps it
+   visible on dark sections and photographs as well as on white. */
 :focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-ink);
   outline-offset: 2px;
+  box-shadow: 0 0 0 4px #ffffff;
   border-radius: 2px;
 }
 
@@ -83,13 +96,14 @@ body {
   top: 1rem;
 }
 
-/* Scroll-reveal: purely additive — content is fully visible with no JS. */
+/* Scroll-reveal: purely additive — content is fully visible with no JS
+   (`scripting: enabled`) and with reduced motion. */
 .reveal {
   opacity: 1;
   transform: none;
   transition: opacity 0.6s ease, transform 0.6s ease;
 }
-@media (prefers-reduced-motion: no-preference) {
+@media (prefers-reduced-motion: no-preference) and (scripting: enabled) {
   .reveal {
     opacity: 0;
     transform: translateY(16px);
@@ -97,6 +111,39 @@ body {
   .reveal-visible {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* Photography motion: a slow fade for the hero and a very slight
+   scroll-linked drift elsewhere. Scroll-driven animations are a
+   progressive enhancement — unsupported browsers just show a still photo. */
+@media (prefers-reduced-motion: no-preference) {
+  .photo-fade-in {
+    animation: photo-fade-in 1.6s ease-out both;
+  }
+  @supports (animation-timeline: view()) {
+    .photo-parallax {
+      animation: photo-drift linear both;
+      animation-timeline: view();
+    }
+  }
+}
+@keyframes photo-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(1.03);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes photo-drift {
+  from {
+    transform: translateY(-3%) scale(1.07);
+  }
+  to {
+    transform: translateY(3%) scale(1.07);
   }
 }
 

@@ -47,7 +47,7 @@ export function Footer() {
         </div>
 
         <FooterColumn title="Product" links={footerNav.product} />
-        <FooterColumn title="Organization" links={footerNav.organization} />
+        <FooterColumn title="Who It's For" links={footerNav.organization} />
         <FooterColumn title="Company" links={footerNav.company} />
         <FooterColumn title="Legal" links={footerNav.legal} />
       </Container>
@@ -55,7 +55,7 @@ export function Footer() {
       <div className="border-t border-border-dark">
         <Container className="flex flex-col items-center justify-between gap-3 py-6 text-xs text-white/50 sm:flex-row">
           <p>&copy; {new Date().getFullYear()} ResQNet. All rights reserved.</p>
-          <p>Built for resilient emergency communication.</p>
+          <p>ResQNet does not replace official emergency services.</p>
         </Container>
       </div>
     </footer>

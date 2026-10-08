@@ -3,12 +3,14 @@ import { Container } from "@/components/layout/Container";
 import { PageHero } from "@/components/sections/PageHero";
 import { Button } from "@/components/ui/Button";
 import { featureGroups } from "@/content/feature-groups";
+import { CoreConceptsSection } from "@/components/sections/CoreConceptsSection";
+import { SituationalAwarenessSection } from "@/components/sections/SituationalAwarenessSection";
 import { pageMetadata } from "@/lib/seo";
 
 export const metadata = pageMetadata({
-  title: "Emergency SOS, Trusted Contacts & More",
+  title: "Features: SOS, Offline Mesh, Location & Responder Tools",
   description:
-    "ResQNet's actual product capabilities: Emergency SOS, Trusted Contacts, Location, Notifications, Resilient Communication, and Security.",
+    "ResQNet's capabilities and their current status: emergency SOS, offline Bluetooth/Wi-Fi Direct mesh, location sharing, trusted contacts, disaster awareness, automatic detection, responder operations and privacy controls.",
   path: "/features/",
 });
 
@@ -18,7 +20,7 @@ export default function FeaturesPage() {
       <PageHero
         eyebrow="Features"
         title="What ResQNet actually does."
-        description="Every capability below reflects what's built into the app today — not a roadmap."
+        description="Every capability below is built. Each one carries its honest status, because much of ResQNet still has to be proven on real phones in the field."
       />
 
       <section className="py-20 sm:py-28">
@@ -36,6 +38,9 @@ export default function FeaturesPage() {
                   <h2 className="mt-5 text-xl font-semibold text-ink">{group.title}</h2>
                   <p className="mt-2 text-sm leading-relaxed text-ink-soft">
                     {group.summary}
+                  </p>
+                  <p className="mt-3 inline-block rounded-full bg-bg-subtle px-3 py-1 text-xs font-semibold text-ink-soft">
+                    Status: {group.status}
                   </p>
                 </div>
 
@@ -56,6 +61,10 @@ export default function FeaturesPage() {
           </div>
         </Container>
       </section>
+
+      {/* Moved from the homepage when it became photo-led. */}
+      <CoreConceptsSection />
+      <SituationalAwarenessSection />
 
       <section className="border-t border-border py-16 text-center">
         <Container>

@@ -1,11 +1,14 @@
 import {
-  GraduationCap,
-  Building2,
+  ListChecks,
+  UserCheck,
+  Map as MapIcon,
+  BellRing,
+  ScrollText,
+  KeyRound,
+  LifeBuoy,
+  HeartHandshake,
   Landmark,
-  Siren,
-  Users,
-  Radio,
-  ShieldCheck,
+  Building2,
 } from "lucide-react";
 import { Container } from "@/components/layout/Container";
 import { PageHero } from "@/components/sections/PageHero";
@@ -14,77 +17,92 @@ import { Button } from "@/components/ui/Button";
 import { pageMetadata } from "@/lib/seo";
 
 export const metadata = pageMetadata({
-  title: "For Organizations & Institutions",
+  title: "For Responders, NGOs & Emergency Operations Centers",
   description:
-    "How universities, companies, communities, and institutions can work with ResQNet on emergency communication and coordination.",
+    "ResQNet's responder operations portal: incident queue, enforced response workflow, assignment, incident map, alerts, permissions and audit trail. Built and tested; not yet deployed.",
   path: "/organizations/",
 });
 
 const audiences = [
+  { icon: LifeBuoy, title: "Rescue teams", description: "See incoming SOS alerts, take ownership and record progress on scene." },
+  { icon: HeartHandshake, title: "NGOs and relief groups", description: "Coordinate volunteers responding to people who are cut off." },
+  { icon: Landmark, title: "Local authorities", description: "Publish alerts and keep an accountable record of the response." },
+  { icon: Building2, title: "Emergency operations centers", description: "One queue, one map and one timeline for every incident." },
+];
+
+// From docs/FEATURE_STATUS.md #34–#38 and docs/SECURITY.md — the
+// operations portal (lib/main_operations.dart) and /api/v1/employee.
+const capabilities = [
   {
-    icon: GraduationCap,
-    title: "Universities & campuses",
+    icon: ListChecks,
+    title: "Incident queue and workflow",
     description:
-      "Give students and staff a direct way to alert trusted contacts and campus safety contacts during an incident.",
+      "Every SOS that reaches the server becomes an incident that moves through a fixed sequence: reported, acknowledged, assigned, en route, arrived, assisting, resolved. It can also be stood down with a reason. Resolved and stood-down are final.",
   },
   {
-    icon: Building2,
-    title: "Companies & communities",
+    icon: UserCheck,
+    title: "Assignment",
     description:
-      "Support employees or residents with a shared emergency communication tool that doesn't depend on any one person's phone habits.",
+      "Assign and reassign responders. Only the assigned responder records on-scene progress, unless a coordinator with assignment permission does it for them.",
   },
   {
-    icon: Landmark,
-    title: "Institutions & future public-sector partners",
+    icon: ScrollText,
+    title: "Nothing silently disappears",
     description:
-      "Explore how ResQNet's emergency communication model could fit alongside existing institutional or emergency-response processes.",
+      "An incident stays in the queue until a responder closes it, even if the person marks themselves safe or cancels. That change is shown on the timeline, and the dashboard shows the oldest unacknowledged incident.",
+  },
+  {
+    icon: MapIcon,
+    title: "Map and situational view",
+    description:
+      "Incidents on a map with approximate positions. Exact location and the SOS message appear only in the detail view, for staff with respond permission.",
+  },
+  {
+    icon: BellRing,
+    title: "Alerts and disaster sources",
+    description:
+      "Publish and update emergency alerts, with per-source publishing permissions. Alerts can be signed so phones can verify an official alert they receive over the mesh.",
+  },
+  {
+    icon: KeyRound,
+    title: "Permissions and audit trail",
+    description:
+      "Separate monitor, respond and assign permissions, enforced on the server. Monitor-only staff never see the message, phone number or notes. Every staff action is written to an audit log.",
   },
 ];
 
-const value = [
-  {
-    icon: Siren,
-    title: "Emergency communication",
-    description: "A consistent way for people in your organization to signal an emergency.",
-  },
-  {
-    icon: Users,
-    title: "Trusted-contact workflows",
-    description: "Individuals maintain their own trusted contacts, notified automatically on SOS.",
-  },
-  {
-    icon: Radio,
-    title: "Resilient communication",
-    description: "Device-to-device relay for nearby devices, useful in dense campuses or facilities.",
-  },
-  {
-    icon: ShieldCheck,
-    title: "Safety infrastructure",
-    description: "Built on an authenticated, ownership-scoped backend — not a spreadsheet or group chat.",
-  },
+const limits = [
+  "The portal is built and covered by automated tests, but it is not deployed and has not been used in a real response.",
+  "Staff get no real-time updates or push notifications yet.",
+  "It has not been tested with real screen readers.",
+  "No government or official emergency-response system is integrated with ResQNet today, and no agency uses it.",
+  "Organization management (multiple agencies, their own staff) is not built yet.",
 ];
 
 export default function OrganizationsPage() {
   return (
     <>
       <PageHero
-        eyebrow="For organizations"
-        title="Built with larger emergency-response ecosystems in mind."
-        description="ResQNet is designed so universities, companies, communities, and institutions can build on the same emergency communication and trusted-contact model individuals already use."
+        eyebrow="For responders and EOCs"
+        title="Turn incoming SOS alerts into owned, tracked incidents."
+        description="ResQNet's second half is an operations portal for the people who respond: rescue teams, NGOs, local authorities and emergency operations centers. It runs on the web and on mobile."
       >
-        <div className="mt-8">
+        <div className="mt-8 flex flex-wrap gap-4">
           <Button href="/contact/?type=organization" size="lg">
             Talk to ResQNet
+          </Button>
+          <Button href="/how-it-works/" variant="secondary" size="lg">
+            How an SOS reaches you
           </Button>
         </div>
       </PageHero>
 
       <section className="py-20 sm:py-28">
         <Container>
-          <SectionHeading eyebrow="Who this is for" title="Organizations we can support." />
-          <div className="mt-12 grid gap-8 sm:grid-cols-3">
+          <SectionHeading eyebrow="Who it's for" title="Teams who answer emergencies." />
+          <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {audiences.map((audience) => (
-              <div key={audience.title} className="rounded-2xl border border-border p-7">
+              <div key={audience.title} className="rounded-2xl border border-border p-6">
                 <audience.icon size={22} className="text-primary" aria-hidden="true" />
                 <h3 className="mt-4 text-base font-semibold text-ink">{audience.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-ink-soft">{audience.description}</p>
@@ -96,15 +114,17 @@ export default function OrganizationsPage() {
 
       <section className="border-t border-border bg-bg-subtle py-20 sm:py-28">
         <Container>
-          <SectionHeading eyebrow="Possible value" title="What ResQNet can bring to an organization." />
-          <div className="mt-12 grid gap-8 sm:grid-cols-2">
-            {value.map((item) => (
-              <div key={item.title} className="flex gap-4">
-                <item.icon size={22} className="mt-1 shrink-0 text-primary" aria-hidden="true" />
-                <div>
-                  <h3 className="text-base font-semibold text-ink">{item.title}</h3>
-                  <p className="mt-1 text-sm leading-relaxed text-ink-soft">{item.description}</p>
-                </div>
+          <SectionHeading
+            eyebrow="Operations portal"
+            title="What responders get."
+            description="Each item below exists in the codebase today and is enforced on the server, not only in the interface."
+          />
+          <div className="mt-12 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+            {capabilities.map((item) => (
+              <div key={item.title}>
+                <item.icon size={22} className="text-primary" aria-hidden="true" />
+                <h3 className="mt-4 text-base font-semibold text-ink">{item.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-ink-soft">{item.description}</p>
               </div>
             ))}
           </div>
@@ -113,21 +133,24 @@ export default function OrganizationsPage() {
 
       <section className="py-20 sm:py-28">
         <Container>
-          <div className="rounded-2xl border border-border bg-bg-subtle p-10 text-center sm:p-14">
-            <h2 className="text-2xl font-bold text-ink sm:text-3xl">
-              Government & emergency-response collaboration
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-ink-soft">
-              ResQNet is not currently integrated with any government or
-              official emergency-response system. We see pilot programs,
-              institutional deployment, and closer coordination with existing
-              emergency infrastructure as a future opportunity worth
-              exploring together — not a claim about where things stand
-              today.
+          <div className="mx-auto max-w-2xl rounded-2xl border border-dashed border-border p-8 sm:p-10">
+            <h2 className="text-2xl font-bold text-ink">Current limitations</h2>
+            <ul className="mt-6 list-disc space-y-3 pl-5 text-base leading-relaxed text-ink-soft">
+              {limits.map((limit) => (
+                <li key={limit}>{limit}</li>
+              ))}
+            </ul>
+            <p className="mt-6 text-base leading-relaxed text-ink-soft">
+              If you run emergency response and want to talk about pilots,
+              integration or how the workflow fits your procedures, we&apos;d
+              like to hear from you.
             </p>
-            <div className="mt-8 flex justify-center">
-              <Button href="/contact/?type=government" size="lg">
-                Talk to ResQNet
+            <div className="mt-8 flex flex-wrap gap-4">
+              <Button href="/contact/?type=organization" size="lg">
+                Contact us
+              </Button>
+              <Button href="/contact/?type=government" variant="secondary" size="lg">
+                Government / institutional inquiry
               </Button>
             </div>
           </div>

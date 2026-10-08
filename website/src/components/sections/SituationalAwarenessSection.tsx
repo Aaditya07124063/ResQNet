@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { Info, Radio, ArrowRight } from "lucide-react";
 import { Container } from "@/components/layout/Container";
 import { SectionHeading } from "@/components/ui/SectionHeading";
@@ -34,7 +35,7 @@ function Chip({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors",
+        "inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors",
         active
           ? "border-white/30 bg-white/10 text-white"
           : "border-white/10 bg-transparent text-white/50 hover:border-white/20 hover:text-white/75",
@@ -111,15 +112,15 @@ export function SituationalAwarenessSection() {
       <Container>
         <SectionHeading
           eyebrow="Situational awareness"
-          title="Emergencies are local. Understanding where matters as much as knowing that."
+          title="Disasters are local. ResQNet starts with Nepal and India."
           light
-          description="ResQNet's product today is a global idea starting in one specific place — Nepal and India — because emergency communication has to work for a specific place before it can work anywhere."
+          description="The Himalaya and South Asia face earthquakes, floods and landslides, often in places where coverage is thin. The map below is an illustration, not a live hazard feed."
         />
 
         <div className="mt-14 grid gap-12 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-center">
           <div className="flex flex-col items-center">
             <Globe key={globeKey} markers={markers} />
-            <p className="mt-4 max-w-sm text-center text-xs text-white/40">
+            <p className="mt-4 max-w-sm text-center text-xs text-white/60">
               World → South Asia → Nepal and India. Drag to rotate.
             </p>
           </div>
@@ -222,10 +223,13 @@ export function SituationalAwarenessSection() {
             trigger an SOS, and ResQNet gets it to your trusted contacts,
             nearby devices, and local responders.
           </p>
-          <span className="inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold text-white/80">
+          <Link
+            href="/how-it-works/"
+            className="inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold text-white/90 hover:underline"
+          >
             See how it works
             <ArrowRight size={16} aria-hidden="true" />
-          </span>
+          </Link>
         </div>
       </Container>
     </section>

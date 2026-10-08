@@ -31,7 +31,7 @@ src/
                   opengraph-image.tsx, not-found.tsx
   components/
     layout/       Header, Footer, Container, SkipLink
-    sections/     Page-level sections (Hero, ProblemSection, etc.)
+    sections/     Page-level sections (Hero, MeshSection, CiviliansSection, etc.)
       mockups/    The CSS-built phone-screen mockups (no real
                   screenshots exist in the project — see below)
     ui/           Reusable primitives (Button, SectionHeading, Logo,

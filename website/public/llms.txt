@@ -1,0 +1,21 @@
+# ResQNet
+
+> ResQNet is offline-first emergency communication. When mobile networks or the Internet are down, phones running ResQNet relay SOS alerts, messages and location to each other over Bluetooth and Wi-Fi Direct (store-and-forward, multi-hop) until one phone with Internet uploads them. A responder operations portal lets rescue teams, NGOs, local authorities and emergency operations centers take ownership of each incident.
+
+Status (October 2026): in active development, starting with Nepal and India. Not yet in Google Play or the App Store. Core SOS, mesh relay, store-and-forward and the responder workflow are implemented and covered by automated and simulated tests; they have not been field-tested across many real phones. No communication range is claimed. ResQNet is not integrated with any government or emergency agency, does not replace official emergency services, and cannot guarantee delivery. Mesh payloads are signed, not encrypted.
+
+## Pages
+
+- [Home](https://resqnet.co/): what ResQNet is, how the offline mesh works, who it is for
+- [How It Works](https://resqnet.co/how-it-works/): the path of an SOS from phone to responder, with an interactive concept demonstration; implemented vs. not yet done
+- [Features](https://resqnet.co/features/): every capability with its current status
+- [For Responders & EOCs](https://resqnet.co/organizations/): operations portal (incident queue, workflow, assignment, map, alerts, permissions, audit log), built and not yet deployed
+- [Safety & Privacy](https://resqnet.co/safety-privacy/): who can see an SOS, medical opt-in, retention periods, limitations
+- [Privacy Policy](https://resqnet.co/privacy-policy/): not yet legally reviewed
+- [Download](https://resqnet.co/download/): release status
+- [About](https://resqnet.co/about/)
+- [Contact](https://resqnet.co/contact/)
+
+## Source
+
+- [Source code](https://github.com/Aaditya07124063/ResQNet)

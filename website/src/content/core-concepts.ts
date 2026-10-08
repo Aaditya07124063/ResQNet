@@ -3,9 +3,9 @@ import {
   Siren,
   Users,
   MapPin,
-  BellRing,
   Radio,
-  ListChecks,
+  TriangleAlert,
+  Activity,
 } from "lucide-react";
 
 export type CoreConcept = {
@@ -15,44 +15,44 @@ export type CoreConcept = {
 };
 
 /**
- * The six concepts ResQNet is organized around. Kept in one place so the
- * home page and Features page describe the same product the same way.
+ * The homepage capability summary. Every line maps to an implemented
+ * feature in docs/FEATURE_STATUS.md; physical-test caveats are kept.
  */
 export const coreConcepts: CoreConcept[] = [
   {
     icon: Siren,
     title: "Emergency SOS",
     description:
-      "Trigger an SOS in seconds, whether started manually or by ResQNet's own crash and earthquake detection. Each alert carries a category, a message, and location details so the situation is clear immediately.",
-  },
-  {
-    icon: Users,
-    title: "Trusted Contacts",
-    description:
-      "Build a list of the people who should know when something happens to you. ResQNet notifies them the moment you send an SOS, so you're not the one who has to make that call.",
-  },
-  {
-    icon: MapPin,
-    title: "Location",
-    description:
-      "When location is available, it's attached to your SOS automatically, giving the people coordinating a response a real starting point instead of a guess.",
-  },
-  {
-    icon: BellRing,
-    title: "Notifications",
-    description:
-      "Push notifications keep your trusted contacts and the app itself informed as an SOS is created, acknowledged, or resolved — no need to refresh or ask.",
+      "One tap, a category (medical, fire, flood, earthquake, trapped, rescue or general), and a 5-second countdown you can cancel. The SOS is saved on your phone before anything is sent, so it survives a failed attempt.",
   },
   {
     icon: Radio,
-    title: "Resilient Communication",
+    title: "Offline mesh relay",
     description:
-      "ResQNet can relay emergency messages directly between nearby devices over Bluetooth and Wi-Fi Direct, so people close to each other can stay in contact even without a working mobile network.",
+      "Nearby phones exchange the SOS over Bluetooth and Wi-Fi Direct, keep a copy, and pass it on to phones they meet later, up to a signed hop limit. Tested in simulation; multi-phone field tests are still to come.",
   },
   {
-    icon: ListChecks,
-    title: "Coordination",
+    icon: MapPin,
+    title: "Location sharing",
     description:
-      "Every SOS has a status — open, acknowledged, resolved, or false alarm — so everyone involved can see where things stand instead of wondering if help is already on the way.",
+      "Your GPS position and its accuracy travel with the SOS when the phone has a fix, so people looking for you have a starting point instead of a description.",
+  },
+  {
+    icon: Users,
+    title: "Trusted contacts",
+    description:
+      "The people who should know first. ResQNet opens a pre-filled text to them and local police or disaster numbers (needs cell signal), and the server sends a push notification to those who use ResQNet.",
+  },
+  {
+    icon: TriangleAlert,
+    title: "Hazard awareness",
+    description:
+      "Flood, fire, landslide and blocked-road reports spread between nearby phones. Official alerts stay labeled \"official\" only if their server signature verifies; everything else shows as a community report.",
+  },
+  {
+    icon: Activity,
+    title: "Automatic detection",
+    description:
+      "On-device crash and earthquake detection can start an SOS for you after a countdown. They still need field testing, so treat them as a backup, not a guarantee.",
   },
 ];

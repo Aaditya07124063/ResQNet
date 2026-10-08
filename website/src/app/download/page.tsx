@@ -8,7 +8,7 @@ import { siteConfig } from "@/content/site";
 export const metadata = pageMetadata({
   title: "Download",
   description:
-    "ResQNet's current availability status for Android and iOS, and how to get notified when it launches.",
+    "ResQNet's Android release is coming soon. Current availability for Android and iOS, and how to be notified when the app can be installed.",
   path: "/download/",
 });
 
@@ -21,14 +21,14 @@ const platforms = [
   {
     icon: Smartphone,
     name: "Android",
-    status: "In development",
-    detail: "Google Play listing not yet available.",
+    status: "Coming soon",
+    detail: "Development builds exist; real-device testing is still to come. No Google Play listing yet.",
   },
   {
     icon: Apple,
     name: "iOS",
-    status: "Planned",
-    detail: "App Store availability has not been announced.",
+    status: "Not yet tested",
+    detail: "iOS support has not been tested yet. No App Store date.",
   },
 ];
 
@@ -37,8 +37,8 @@ export default function DownloadPage() {
     <>
       <PageHero
         eyebrow="Download"
-        title="ResQNet isn't publicly available yet."
-        description="ResQNet is still in active development. This page will turn into real download links the moment there's something real to link to."
+        title="Android release coming soon."
+        description="ResQNet isn't available to install from an app store yet. There is no public APK either; any download that claims to be ResQNet isn't from us. This page will link to the real store listing once it exists."
       />
 
       <section className="py-20 sm:py-28">

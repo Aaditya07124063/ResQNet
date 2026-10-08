@@ -26,7 +26,8 @@ export function Logo({
         aria-hidden="true"
         className="shrink-0"
       >
-        <rect width="28" height="28" rx="8" fill="var(--color-primary)" />
+        {/* The one place red is used as identity: it is the SOS signal. */}
+        <rect width="28" height="28" rx="8" fill="var(--color-alert)" />
         <circle cx="14" cy="14" r="3" fill="white" />
         <path
           d="M9 14a5 5 0 0 1 5-5"

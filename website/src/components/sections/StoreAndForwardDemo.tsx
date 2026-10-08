@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 // Internet. It illustrates the protocol only — it does not measure or prove
 // radio range, which depends on devices and conditions.
 
-type NodeState = "idle" | "created" | "carrying" | "gateway" | "received" | "notified";
+type NodeState = "idle" | "created" | "carrying" | "gateway" | "received" | "notified" | "acknowledged";
 
 interface Step {
   caption: string;
@@ -56,6 +56,14 @@ const STEPS: Step[] = [
       "The server verifies the SOS came from Phone A (not from E) and alerts A's trusted contacts who use ResQNet. Other gateways uploading the same SOS do not create a duplicate.",
     states: { A: "created", B: "carrying", C: "carrying", D: "carrying", E: "gateway", server: "received", family: "notified" },
   },
+  {
+    caption:
+      "The SOS appears in the responder incident queue. A responder with permission sees the exact location and message, acknowledges it, and moves it through assigned, en route and arrived to resolved.",
+    states: {
+      A: "created", B: "carrying", C: "carrying", D: "carrying", E: "gateway",
+      server: "received", family: "notified", responder: "acknowledged",
+    },
+  },
 ];
 
 const stateStyle: Record<NodeState, string> = {
@@ -65,6 +73,7 @@ const stateStyle: Record<NodeState, string> = {
   gateway: "border-primary bg-primary-soft text-[var(--color-primary-strong)]",
   received: "border-[var(--color-success)] bg-[var(--color-success-soft)] text-[var(--color-success)]",
   notified: "border-[var(--color-success)] bg-[var(--color-success-soft)] text-[var(--color-success)]",
+  acknowledged: "border-[var(--color-success)] bg-[var(--color-success-soft)] text-[var(--color-success)]",
 };
 
 const stateText: Record<NodeState, string> = {
@@ -74,6 +83,7 @@ const stateText: Record<NodeState, string> = {
   gateway: "Gateway: uploading",
   received: "Received",
   notified: "Notified",
+  acknowledged: "Acknowledged",
 };
 
 export function StoreAndForwardDemo() {
@@ -96,10 +106,10 @@ export function StoreAndForwardDemo() {
   return (
     <div className="rounded-2xl border border-border bg-white p-6 sm:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="rounded-full bg-[var(--color-warn-soft)] px-3 py-1 text-xs font-bold tracking-wide text-[var(--color-warn)] uppercase">
-          Interactive simulation — not a live emergency network.
+        <span className="rounded-lg bg-[var(--color-warn-soft)] px-3 py-1.5 text-xs font-bold tracking-wide text-[var(--color-warn)] uppercase">
+          Interactive Concept Demonstration — not a live emergency network
         </span>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => setPlaying(!isPlaying)}
@@ -135,7 +145,7 @@ export function StoreAndForwardDemo() {
         </div>
       </div>
 
-      <ol className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-5" aria-label="Phones in the simulation">
+      <ol className="mt-8 grid grid-cols-1 gap-2 sm:grid-cols-5 sm:gap-3" aria-label="Phones in the demonstration">
         {NODES.map((node, index) => {
           const state = stateOf(node.id);
           const linkActive = current.link === `${node.id}-${NODES[index + 1]?.id}`;
@@ -143,13 +153,15 @@ export function StoreAndForwardDemo() {
             <li key={node.id} className="relative">
               <div
                 className={cn(
-                  "rounded-xl border-2 p-3 text-center transition-colors motion-reduce:transition-none",
+                  "flex items-center justify-between gap-3 rounded-xl border-2 px-3 py-2 transition-colors motion-reduce:transition-none sm:block sm:p-3 sm:text-center",
                   stateStyle[state],
                 )}
               >
-                <p className="text-sm font-bold text-ink">{node.label}</p>
-                <p className="text-xs text-ink-faint">{node.note}</p>
-                <p className="mt-2 text-xs font-semibold">{stateText[state]}</p>
+                <div>
+                  <p className="text-sm font-bold text-ink">{node.label}</p>
+                  <p className="text-xs text-ink-faint">{node.note}</p>
+                </div>
+                <p className="text-xs font-semibold sm:mt-2">{stateText[state]}</p>
               </div>
               {linkActive && (
                 <span className="absolute top-1/2 -right-3 z-10 hidden h-1 w-6 -translate-y-1/2 rounded bg-primary motion-safe:animate-pulse sm:block" aria-hidden="true" />
@@ -159,10 +171,11 @@ export function StoreAndForwardDemo() {
         })}
       </ol>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
         {[
           { id: "server", label: "ResQNet server", note: "Verifies origin, stores once" },
-          { id: "family", label: "Trusted contacts", note: "Push notification" },
+          { id: "family", label: "Trusted contacts", note: "Generic push, no message text" },
+          { id: "responder", label: "Responder portal", note: "Incident queue and workflow" },
         ].map((node) => {
           const state = stateOf(node.id);
           return (
@@ -185,7 +198,8 @@ export function StoreAndForwardDemo() {
       <p className="mt-4 text-sm text-ink-faint">
         This animation shows the order of events only. How far one phone reaches another depends on the phones,
         radio conditions, terrain and buildings; ResQNet will publish measured results from field tests rather than
-        a promised range. A responder portal is not part of ResQNet yet.
+        a promised range. The responder operations portal in the last step is built but not yet deployed, and
+        ResQNet is not integrated with any emergency agency today.
       </p>
     </div>
   );
